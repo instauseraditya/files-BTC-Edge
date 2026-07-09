@@ -6,11 +6,11 @@
  * through state.js — no direct module-to-module calls.
  */
 
-import { getState, setState, subscribe } from '/state.js';
-import { computeAll } from '/indicators.js';
-import { computeFairValue, computeConfidence, evaluateOpportunity } from '/engine.js';
-import { startPolymarketFeed } from '/polymarket.js';
-import { initChart, updateChart } from '/chart.js';
+import { getState, setState, subscribe } from 'state.js';
+import { computeAll } from 'indicators.js';
+import { computeFairValue, computeConfidence, evaluateOpportunity } from 'engine.js';
+import { startPolymarketFeed } from 'polymarket.js';
+import { initChart, updateChart } from 'chart.js';
 
 const TIME_INTERVALS = [1, 3, 5, 10, 30, 60];
 let ws = null;
