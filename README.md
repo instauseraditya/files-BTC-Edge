@@ -92,3 +92,4 @@ There's no real OHLC bar feed here — just a raw tick stream — so:
   `setState()` — never reach into another module directly.
 - New market: swap the `btc-updown` slug filter in `polymarket.js` for
   whatever Gamma slug family you want to track.
+# files-BTC-Edge
