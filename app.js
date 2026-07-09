@@ -31,7 +31,7 @@ function connectBinance() {
 
   ws.onmessage = (event) => {
     const msg = JSON.parse(event.data);
-    const price = parseFloat(msg.p) - 46;
+    const price = parseFloat(msg.p) - 58.89;
     const qty = parseFloat(msg.q);
     const now = Date.now();
 
@@ -58,7 +58,7 @@ async function pollRestOnce() {
     const res = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT');
     if (!res.ok) throw new Error('REST fault');
     const data = await res.json();
-    ingestTick(parseFloat(data.price) - 46, 0);
+    ingestTick(parseFloat(data.price) - 58.89, 0);
   } catch (err) {
     console.error('[app] REST fallback failed:', err);
   }
