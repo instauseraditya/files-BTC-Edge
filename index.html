@@ -96,18 +96,18 @@
   <section class="chart-card">
     <div class="chart-wrapper"><canvas id="chart"></canvas></div>
   </section>
-
+<details>
   <div class="disclaimer">
     <b>Not financial advice.</b> This dashboard blends short-window technical indicators with Polymarket's own pricing into a heuristic "edge" score. It is a lens for comparing two live signals, not a prediction engine — short-horizon crypto and prediction-market prices are highly noisy, and past agreement or disagreement between the two feeds says nothing about what happens next. Do your own research before risking capital.
   </div>
-
-  <div class="status-bar">
+</details>
+  <div class="status-bar" style="display: none;">
     <span>Updated <span id="timestamp">--:--:--</span></span>
     <span>state.js · engine.js · indicators.js · polymarket.js · chart.js</span>
   </div>
 
 </div>
-
+</details>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script type="module" src="app.js"></script>
 </body>
