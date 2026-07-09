@@ -192,5 +192,5 @@ h1 { font-family: var(--font-display); font-size: 21px; font-weight: 700; letter
 }
 
 a{
-  color: var(--muted);
+  color: var(--text);
 }
