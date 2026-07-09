@@ -190,3 +190,7 @@ h1 { font-family: var(--font-display); font-size: 21px; font-weight: 700; letter
   display: flex; justify-content: space-between; font-size: 10.5px;
   color: var(--muted); font-family: var(--font-mono); padding: 0 2px;
 }
+
+a{
+  color: var(--muted);
+}
