@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BTC Edge — Live Fair Value vs Polymarket</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="wrap">
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">◈</span>
+      <div>
+        <h1>BTC Edge</h1>
+        <p class="tagline">Live order flow, weighed against Polymarket's own price</p>
+      </div>
+    </div>
+    <div class="feeds">
+      <div class="feed-chip"><span class="dot" id="binanceDot"></span>Binance</div>
+      <div class="feed-chip"><span class="dot" id="polyDot"></span>Polymarket</div>
+      <span class="badge" id="feedType">CONNECTING</span>
+    </div>
+  </header>
+
+  <div class="scroll-x">
+    <div class="interval-row" id="intervalRow"></div>
+  </div>
+
+  <section class="hero">
+    <div class="hero-price">
+      <span class="eyebrow">BTC / USDT — Binance Spot</span>
+      <div class="price-line">
+        <span class="price" id="price">$0.00</span>
+        <span class="price-direction" id="priceDirection">—</span>
+      </div>
+      <div class="hero-stats">
+        <div><span class="stat-label">Session</span><span class="stat-val" id="chgSession">0.00%</span></div>
+        <div><span class="stat-label">Ticks</span><span class="stat-val" id="tickCount">0</span></div>
+      </div>
+    </div>
+
+    <div class="edge-meter-card">
+      <span class="eyebrow">Model Edge</span>
+      <svg viewBox="0 0 220 130" class="edge-svg" aria-label="Edge meter">
+        <path d="M 20 110 A 90 90 0 0 1 76 27" class="arc arc-sell"/>
+        <path d="M 76 27 A 90 90 0 0 1 144 27" class="arc arc-hold"/>
+        <path d="M 144 27 A 90 90 0 0 1 200 110" class="arc arc-buy"/>
+        <g id="edgeNeedle" transform="rotate(0 110 110)">
+          <line x1="110" y1="110" x2="110" y2="34" class="needle"/>
+          <circle cx="110" cy="110" r="6" class="needle-pivot"/>
+        </g>
+      </svg>
+      <span class="edge-label" id="edgeLabel">no edge yet</span>
+      <span class="rec-badge rec-hold" id="recBadge">HOLD</span>
+    </div>
+  </section>
+
+  <section class="grid">
+    <div class="card"><span class="label">RSI (14)</span><span class="val mono" id="rsi">—</span></div>
+    <div class="card"><span class="label">EMA 9</span><span class="val mono" id="ema9">—</span></div>
+    <div class="card"><span class="label">EMA 21</span><span class="val mono" id="ema21">—</span></div>
+    <div class="card"><span class="label">ATR (proxy)</span><span class="val mono" id="atr">—</span></div>
+    <div class="card"><span class="label">Session VWAP</span><span class="val mono" id="vwap">—</span></div>
+    <div class="card"><span class="label">Momentum (10)</span><span class="val mono" id="momentum">—</span></div>
+    <div class="card"><span class="label">Realized Vol</span><span class="val mono" id="vol">—</span></div>
+  </section>
+
+  <section class="poly-panel">
+    <div class="poly-head">
+      <span class="eyebrow">Polymarket — Active BTC Market</span>
+    </div>
+    <p class="poly-question" id="pmQuestion">Searching for an active BTC market…</p>
+    <div class="poly-grid">
+      <div><span class="stat-label">Yes (Up)</span><span class="stat-val mono" id="pmYes">—</span></div>
+      <div><span class="stat-label">No (Down)</span><span class="stat-val mono" id="pmNo">—</span></div>
+      <div><span class="stat-label">24h Volume</span><span class="stat-val mono" id="pmVolume">—</span></div>
+      <div><span class="stat-label">Resolves</span><span class="stat-val mono small" id="pmEnd">—</span></div>
+    </div>
+  </section>
+
+  <section class="rec-panel">
+    <div class="rec-head">
+      <span class="eyebrow">Confidence</span>
+      <span class="mono" id="confidenceVal">—</span>
+    </div>
+    <div class="conf-bar"><div class="conf-fill" id="confidenceFill"></div></div>
+    <p class="rec-note" id="recNote">Gathering both feeds…</p>
+  </section>
+
+  <section class="chart-card">
+    <div class="chart-wrapper"><canvas id="chart"></canvas></div>
+  </section>
+
+  <div class="disclaimer">
+    <b>Not financial advice.</b> This dashboard blends short-window technical indicators with Polymarket's own pricing into a heuristic "edge" score. It is a lens for comparing two live signals, not a prediction engine — short-horizon crypto and prediction-market prices are highly noisy, and past agreement or disagreement between the two feeds says nothing about what happens next. Do your own research before risking capital.
+  </div>
+
+  <div class="status-bar">
+    <span>Updated <span id="timestamp">--:--:--</span></span>
+    <span>state.js · engine.js · indicators.js · polymarket.js · chart.js</span>
+  </div>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
