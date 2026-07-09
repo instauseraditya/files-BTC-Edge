@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Polymarket BTC Live Edge Tracker</title>
+    <style>
+        :root {
+            --bg-color: #0b0c0e;
+            --panel-bg: #141619;
+            --text-main: #ffffff;
+            --text-muted: #848e9c;
+            --border-color: #2b2f36;
+            --up-color: #00ff88;   /* Neon Green */
+            --down-color: #ff3355; /* Crimson Red */
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        .chart-container {
+            background-color: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 24px;
+            width: 95%;
+            max-width: 850px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 16px;
+        }
+
+        .price-display {
+            font-size: 2rem;
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .target-box {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        .target-box span {
+            color: var(--text-main);
+            font-weight: 600;
+        }
+
+        .graph-area {
+            position: relative;
+            height: 320px;
+            width: 100%;
+            border-left: 1px solid var(--border-color);
+            border-bottom: 1px solid var(--border-color);
+            margin-bottom: 24px;
+        }
+
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 5;
+        }
+
+        /* Floating Dynamic Head Tag */
+        #floating-tag {
+            position: absolute;
+            z-index: 10;
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: bold;
+            white-space: nowrap;
+            pointer-events: none;
+            transform: translate(12px, -50%); /* Offset slightly to the right of the tip */
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            transition: top 0.1s linear, left 1s linear;
+            display: none;
+            border: 1px solid #fff;
+        }
+
+        #floating-tag.up {
+            background-color: var(--up-color);
+            color: #000;
+            border-color: var(--up-color);
+        }
+
+        #floating-tag.down {
+            background-color: var(--down-color);
+            color: #fff;
+            border-color: var(--down-color);
+        }
+
+        /* Custom X-Axis labels layout container */
+        #x-axis-container {
+            position: absolute;
+            bottom: -22px;
+            left: 0;
+            width: 100%;
+            height: 20px;
+            display: flex;
+            justify-content: space-between;
+            color: var(--text-muted);
+            font-size: 0.75rem;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .footer {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="chart-container">
+        <div class="header">
+            <div>
+                <h2 style="font-size: 1.1rem; color: var(--text-muted); font-weight: 500;">BTC/USDT Polymarket Edge Engine</h2>
+                <div id="live-price" class="price-display">Loading WS...</div>
+                <div class="target-box">Initial Value (0s): <span id="strike-price">---</span></div>
+            </div>
+            <div style="text-align: right;">
+                <div id="time-left" style="font-size: 1.6rem; font-weight: bold; font-variant-numeric: tabular-nums;">5:00</div>
+                <div style="font-size: 0.8rem; color: var(--text-muted);">Cycle Window</div>
+            </div>
+        </div>
+
+        <div class="graph-area">
+            <canvas id="liveChart"></canvas>
+            
+            <div id="floating-tag"></div>
+
+            <div id="x-axis-container">
+                <span id="x-start">0s</span>
+                <span id="x-mid1">75s</span>
+                <span id="x-mid2">150s</span>
+                <span id="x-mid3">225s</span>
+                <span id="x-end">300s</span>
+            </div>
+        </div>
+
+        <div class="footer">
+            <div>Engine Status: <strong style="color:var(--up-color);">Live WebSocket Feed</strong></div>
+            <div>Delta Calculation: <strong id="trend-indicator">NEUTRAL</strong></div>
+            <div>Total Data Nodes: <span id="nodes-count" style="color:#fff;">0</span></div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('liveChart');
+        const ctx = canvas.getContext('2d');
+        const priceElement = document.getElementById('live-price');
+        const strikeElement = document.getElementById('strike-price');
+        const timeLeftElement = document.getElementById('time-left');
+        const trendIndicator = document.getElementById('trend-indicator');
+        const nodesCount = document.getElementById('nodes-count');
+        const floatingTag = document.getElementById('floating-tag');
+
+        // Target Axis text nodes
+        const xStart = document.getElementById('x-start');
+        const xMid1 = document.getElementById('x-mid1');
+        const xMid2 = document.getElementById('x-mid2');
+        const xMid3 = document.getElementById('x-mid3');
+        const xEnd = document.getElementById('x-end');
+
+        let priceData = [];
+        let strikePrice = null;
+        let lastPrice = null;
+        let intervalSeconds = 0;
+        const maxInterval = 300; 
+
+        function resizeCanvas() {
+            canvas.width = canvas.parentElement.clientWidth;
+            canvas.height = canvas.parentElement.clientHeight;
+            drawChart();
+        }
+        window.addEventListener('resize', resizeCanvas);
+        setTimeout(resizeCanvas, 100);
+
+        function drawChart() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            if (priceData.length === 0) {
+                floatingTag.style.display = 'none';
+                return;
+            }
+
+            const paddingY = 30;
+            const paddingX = 10;
+            const prices = priceData.map(d => d.price);
+            
+            // Re-bounds price boundaries dynamically based on incoming variance
+            const minPrice = Math.min(...prices, strikePrice) * 0.9997;
+            const maxPrice = Math.max(...prices, strikePrice) * 1.0003;
+            const priceRange = maxPrice - minPrice;
+
+            const getX = (index) => (index / (maxInterval - 1)) * (canvas.width - paddingX * 2) + paddingX;
+            const getY = (val) => canvas.height - (((val - minPrice) / priceRange) * (canvas.height - paddingY * 2) + paddingY);
+
+            // 1. Draw horizontal zero-bound threshold dashed line
+            if (strikePrice) {
+                ctx.beginPath();
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+                ctx.lineWidth = 1;
+                ctx.setLineDash([6, 4]);
+                const strikeY = getY(strikePrice);
+                ctx.moveTo(0, strikeY);
+                ctx.lineTo(canvas.width, strikeY);
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+
+            // 2. Continuous color-adaptive line graph drawing
+            for (let i = 1; i < priceData.length; i++) {
+                ctx.beginPath();
+                ctx.lineWidth = 2.5;
+                ctx.strokeStyle = priceData[i].price >= strikePrice ? '#00ff88' : '#ff3355';
+                ctx.moveTo(getX(i - 1), getY(priceData[i - 1].price));
+                ctx.lineTo(getX(i), getY(priceData[i].price));
+                ctx.stroke();
+            }
+
+            // 3. Compute and stick the Floating Tag onto the leading coordinate tip
+            const lastIdx = priceData.length - 1;
+            const headX = getX(lastIdx);
+            const headY = getY(priceData[lastIdx].price);
+
+            // Calculate exact percentage shift from genesis point
+            const pctChange = ((lastPrice - strikePrice) / strikePrice) * 100;
+            const formattedPct = (pctChange >= 0 ? '+' : '') + pctChange.toFixed(3) + '%';
+            
+            // Format dynamic ticker label payload
+            floatingTag.innerHTML = `BTC: $${lastPrice.toFixed(1)} (${formattedPct})`;
+            
+            if(lastPrice >= strikePrice) {
+                floatingTag.className = "up";
+                trendIndicator.innerText = `UP (${formattedPct})`;
+                trendIndicator.style.color = "var(--up-color)";
+            } else {
+                floatingTag.className = "down";
+                trendIndicator.innerText = `DOWN (${formattedPct})`;
+                trendIndicator.style.color = "var(--down-color)";
+            }
+
+            // Move the HTML label elements over canvas coordinates safely
+            floatingTag.style.display = 'block';
+            floatingTag.style.left = `${headX}px`;
+            floatingTag.style.top = `${headY}px`;
+
+            // Adjust horizontal orientation fallback near maximum edge boundary
+            if (headX > canvas.width * 0.7) {
+                floatingTag.style.transform = 'translate(-105%, -50%)'; 
+            } else {
+                floatingTag.style.transform = 'translate(12px, -50%)';
+            }
+        }
+
+        // Connect directly to free streaming market updates
+        function connectMarketFeed() {
+            const ws = new WebSocket('wss://stream.binance.com:9443/ws/btcusdt@ticker');
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                const currentPrice = parseFloat(data.c);
+
+                if (!strikePrice) {
+                    strikePrice = currentPrice;
+                    strikeElement.innerText = `$${strikePrice.toLocaleString()}`;
+                    updateXAxisLabels(); // Write down historical timestamp anchors relative to connection execution
+                }
+
+                priceElement.innerText = `$${currentPrice.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+                priceElement.style.color = currentPrice >= strikePrice ? "var(--up-color)" : "var(--down-color)";
+                lastPrice = currentPrice;
+            };
+
+            ws.onclose = () => setTimeout(connectMarketFeed, 2000);
+        }
+
+        // Write down changing timeline properties along horizontal axis maps
+        function updateXAxisLabels() {
+            const now = new Date();
+            const formatTime = (d) => d.toTimeString().split(' ')[0].substring(0, 5);
+            
+            xStart.innerText = formatTime(now) + " (0s)";
+            
+            let futureTime = new Date(now.getTime() + 300000); // end of 5 min chunk
+            xEnd.innerText = formatTime(futureTime) + " (300s)";
+
+            // Intermediary markers inside grid layout frame
+            xMid1.innerText = "+75s";
+            xMid2.innerText = "+150s";
+            xMid3.innerText = "+225s";
+        }
+
+        function runIntervalClock() {
+            setInterval(() => {
+                if (!lastPrice) return;
+
+                intervalSeconds++;
+                nodesCount.innerText = intervalSeconds;
+
+                // Push tracking array nodes
+                priceData.push({ time: intervalSeconds, price: lastPrice });
+
+                // Render dynamic countdown remaining text element 
+                const remaining = maxInterval - intervalSeconds;
+                const mins = Math.floor(remaining / 60);
+                const secs = remaining % 60;
+                timeLeftElement.innerText = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+
+                // Recycle intervals seamlessly upon hitting target period expiration limits
+                if (intervalSeconds >= maxInterval) {
+                    intervalSeconds = 0;
+                    priceData = [];
+                    strikePrice = lastPrice;
+                    strikeElement.innerText = `$${strikePrice.toLocaleString()}`;
+                    updateXAxisLabels();
+                }
+
+                drawChart();
+            }, 1000);
+        }
+
+        connectMarketFeed();
+        runIntervalClock();
+    </script>
+</body>
+</html>

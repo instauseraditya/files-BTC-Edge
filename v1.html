@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Polymarket BTC 5m Live Tracker</title>
+    <style>
+        :root {
+            --bg-color: #0b0c0e;
+            --panel-bg: #141619;
+            --text-main: #ffffff;
+            --text-muted: #848e9c;
+            --border-color: #2b2f36;
+            --up-color: #00ff88;   /* Neon Green */
+            --down-color: #ff3355; /* Crimson Red */
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        .chart-container {
+            background-color: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 24px;
+            width: 95%;
+            max-width: 850px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 16px;
+        }
+
+        .price-display {
+            font-size: 2rem;
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+            transition: color 0.15s ease;
+        }
+
+        .price-display.up { color: var(--up-color); }
+        .price-display.down { color: var(--down-color); }
+
+        .target-box {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        .target-box span {
+            color: var(--text-main);
+            font-weight: 600;
+        }
+
+        .graph-area {
+            position: relative;
+            height: 300px;
+            width: 100%;
+            border-left: 1px solid var(--border-color);
+            border-bottom: 2px solid var(--text-main);
+            margin-bottom: 16px;
+            overflow: hidden;
+        }
+
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 5;
+        }
+
+        .grid-y {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            pointer-events: none;
+        }
+
+        .grid-line {
+            width: 100%;
+            border-top: 1px dashed rgba(255, 255, 255, 0.05);
+        }
+
+        .footer {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 8px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 6px;
+            font-size: 0.8rem;
+        }
+
+        .dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            margin-right: 6px;
+            background-color: var(--text-muted);
+        }
+
+        .dot.connected {
+            background-color: var(--up-color);
+            box-shadow: 0 0 8px var(--up-color);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="chart-container">
+        <div class="header">
+            <div>
+                <h2 style="font-size: 1.1rem; color: var(--text-muted); font-weight: 500;">BTC/USDT 5m Interval</h2>
+                <div id="live-price" class="price-display">Loading...</div>
+                <div class="target-box">Price to Beat: <span id="strike-price">---</span></div>
+            </div>
+            <div style="text-align: right;">
+                <div class="status-badge" style="margin-bottom: 8px;">
+                    <span id="status-dot" class="dot"></span>
+                    <span id="status-text">Connecting WebSocket...</span>
+                </div>
+                <div id="time-left" style="font-size: 1.1rem; font-weight: bold; font-variant-numeric: tabular-nums;">5:00</div>
+            </div>
+        </div>
+
+        <div class="graph-area">
+            <div class="grid-y">
+                <div class="grid-line"></div>
+                <div class="grid-line"></div>
+                <div class="grid-line"></div>
+                <div class="grid-line"></div>
+                <div class="grid-line"></div>
+            </div>
+            <canvas id="liveChart"></canvas>
+        </div>
+
+        <div class="footer">
+            <div>Feed: <strong style="color:#fff;">Binance Direct WS</strong></div>
+            <div>Market Condition: <strong id="trend-indicator" style="transition: color 0.2s;">NEUTRAL</strong></div>
+            <div>Window Progress: <span id="progress-text" style="color:#fff;">0 / 300s</span></div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('liveChart');
+        const ctx = canvas.getContext('2d');
+        const priceElement = document.getElementById('live-price');
+        const strikeElement = document.getElementById('strike-price');
+        const timeLeftElement = document.getElementById('time-left');
+        const statusDot = document.getElementById('status-dot');
+        const statusText = document.getElementById('status-text');
+        const trendIndicator = document.getElementById('trend-indicator');
+        const progressText = document.getElementById('progress-text');
+
+        let priceData = [];
+        let strikePrice = null;
+        let lastPrice = null;
+        let intervalSeconds = 0;
+        const maxInterval = 300; // 5 minutes in seconds
+
+        // Resize Canvas dynamically
+        function resizeCanvas() {
+            canvas.width = canvas.parentElement.clientWidth;
+            canvas.height = canvas.parentElement.clientHeight;
+            drawChart();
+        }
+        window.addEventListener('resize', resizeCanvas);
+        setTimeout(resizeCanvas, 100);
+
+        // Core chart drawing algorithm
+        function drawChart() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            if (priceData.length < 2) return;
+
+            const padding = 20;
+            const prices = priceData.map(d => d.price);
+            const minPrice = Math.min(...prices, strikePrice || prices[0]) * 0.9999;
+            const maxPrice = Math.max(...prices, strikePrice || prices[0]) * 1.0001;
+            const priceRange = maxPrice - minPrice;
+
+            // Helper function to map data to pixel spaces
+            const getX = (index) => (index / (maxInterval - 1)) * (canvas.width - padding * 2) + padding;
+            const getY = (val) => canvas.height - (((val - minPrice) / priceRange) * (canvas.height - padding * 2) + padding);
+
+            // 1. Draw Polymarket "Price to Beat" Horizontal Anchor Line
+            if (strikePrice) {
+                ctx.beginPath();
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+                ctx.lineWidth = 1.5;
+                ctx.setLineDash([4, 4]);
+                const strikeY = getY(strikePrice);
+                ctx.moveTo(0, strikeY);
+                ctx.lineTo(canvas.width, strikeY);
+                ctx.stroke();
+                ctx.setLineDash([]); // clear dash configuration
+            }
+
+            // 2. Draw the Moving Price Line segment by segment to color code real-time directions
+            for (let i = 1; i < priceData.length; i++) {
+                ctx.beginPath();
+                ctx.lineWidth = 3;
+                
+                // Color configuration depends on whether it is moving up or down relative to target
+                if (priceData[i].price >= strikePrice) {
+                    ctx.strokeStyle = '#00ff88'; // Upward Green Zone
+                } else {
+                    ctx.strokeStyle = '#ff3355'; // Downward Red Zone
+                }
+
+                ctx.moveTo(getX(i - 1), getY(priceData[i - 1].price));
+                ctx.lineTo(getX(i), getY(priceData[i].price));
+                ctx.stroke();
+            }
+
+            // 3. Draw flashing head node dot
+            const lastIdx = priceData.length - 1;
+            const headX = getX(lastIdx);
+            const headY = getY(priceData[lastIdx].price);
+            const currentTrendColor = priceData[lastIdx].price >= strikePrice ? '#00ff88' : '#ff3355';
+
+            ctx.beginPath();
+            ctx.arc(headX, headY, 6, 0, 2 * Math.PI);
+            ctx.fillStyle = '#ffffff';
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = currentTrendColor;
+            ctx.fill();
+            ctx.shadowBlur = 0; // reset shadow
+        }
+
+        // Establish Free Live Stream Pipeline 
+        function connectMarketFeed() {
+            const ws = new WebSocket('wss://stream.binance.com:9443/ws/btcusdt@ticker');
+
+            ws.onopen = () => {
+                statusDot.className = "dot connected";
+                statusText.innerText = "Live Connected";
+            };
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                const currentPrice = parseFloat(data.c);
+
+                // Initialize strike baseline on first incoming data point
+                if (!strikePrice) {
+                    strikePrice = currentPrice;
+                    strikeElement.innerText = `$${strikePrice.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+                }
+
+                // Handle text directions and flashing visual changes
+                if (lastPrice) {
+                    priceElement.className = "price-display " + (currentPrice >= lastPrice ? "up" : "down");
+                }
+                priceElement.innerText = `$${currentPrice.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+
+                // Update text statuses
+                if (currentPrice >= strikePrice) {
+                    trendIndicator.innerText = "UP (GREEN ZONE)";
+                    trendIndicator.style.color = "var(--up-color)";
+                } else {
+                    trendIndicator.innerText = "DOWN (RED ZONE)";
+                    trendIndicator.style.color = "var(--down-color)";
+                }
+
+                lastPrice = currentPrice;
+            };
+
+            ws.onerror = () => {
+                statusText.innerText = "Feed Error. Retrying...";
+                statusDot.className = "dot";
+            };
+
+            ws.onclose = () => {
+                statusText.innerText = "Disconnected. Reconnecting...";
+                statusDot.className = "dot";
+                setTimeout(connectMarketFeed, 3000);
+            };
+        }
+
+        // Keep local ticker clock aligned to 5-minute ticks (300 seconds tracking windows)
+        function runIntervalClock() {
+            setInterval(() => {
+                if (!lastPrice) return; 
+
+                intervalSeconds++;
+                progressText.innerText = `${intervalSeconds} / 300s`;
+
+                // Log historic point for line drawing
+                priceData.push({ time: intervalSeconds, price: lastPrice });
+
+                // Render clock readout
+                const remaining = maxInterval - intervalSeconds;
+                const mins = Math.floor(remaining / 60);
+                const secs = remaining % 60;
+                timeLeftElement.innerText = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+
+                // Resolve interval and clear grid state on cycle loop
+                if (intervalSeconds >= maxInterval) {
+                    intervalSeconds = 0;
+                    priceData = [];
+                    strikePrice = lastPrice; // Reset target baseline to current spot
+                    strikeElement.innerText = `$${strikePrice.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+                }
+
+                drawChart();
+            }, 1000); // Sample rate once per second
+        }
+
+        // Initialize Engine
+        connectMarketFeed();
+        runIntervalClock();
+    </script>
+</body>
+</html>

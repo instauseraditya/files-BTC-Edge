@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Polymarket BTC 5m Pro Tracker Engine</title>
+    <style>
+        :root {
+            --bg-color: #0b0c0e;
+            --panel-bg: #141619;
+            --text-main: #ffffff;
+            --text-muted: #848e9c;
+            --border-color: #2b2f36;
+            --up-color: #00ff88;   /* Neon Green */
+            --down-color: #ff3355; /* Crimson Red */
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 12px;
+        }
+
+        .chart-container {
+            background-color: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px;
+            width: 100%;
+            max-width: 850px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+            position: relative;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 20px;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 16px;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+
+        .price-display {
+            font-size: 1.8rem;
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* Timed Blinking Vector Arrow Indicators CSS */
+        .momentum-indicator {
+            display: inline-flex;
+            gap: 2px;
+            font-size: 1.4rem;
+            font-weight: 900;
+            vertical-align: middle;
+            margin-left: 8px;
+            line-height: 1;
+        }
+
+        .momentum-indicator span {
+            display: none;
+            animation: pulse-blink 0.8s infinite alternate;
+        }
+
+        @keyframes pulse-blink {
+            0% { opacity: 0.2; }
+            100% { opacity: 1; }
+        }
+
+        .graph-area {
+            position: relative;
+            height: 300px;
+            width: 100%;
+            border-left: 1px solid var(--border-color);
+            border-bottom: 1px solid var(--border-color);
+            margin-bottom: 24px;
+        }
+
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 5;
+        }
+
+        /* Floating Pinpoint Edge Tag */
+        #floating-tag {
+            position: absolute;
+            z-index: 10;
+            padding: 6px 10px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: bold;
+            white-space: nowrap;
+            pointer-events: none;
+            transform: translate(12px, -50%);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.6);
+            transition: top 0.1s linear, left 0.1s linear;
+            display: none;
+            border: 1px solid #fff;
+        }
+
+        #floating-tag.up { background-color: var(--up-color); color: #000; border-color: var(--up-color); }
+        #floating-tag.down { background-color: var(--down-color); color: #fff; border-color: var(--down-color); }
+
+        #x-axis-container {
+            position: absolute;
+            bottom: -22px;
+            left: 0;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            color: var(--text-muted);
+            font-size: 0.7rem;
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* Historical Time Machine Slide Controller Panel */
+        .history-controls {
+            margin-top: 15px;
+            border-top: 1px solid var(--border-color);
+            padding-top: 15px;
+        }
+
+        .history-title {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .history-tabs {
+            display: flex;
+            gap: 8px;
+            overflow-x: auto;
+            padding-bottom: 4px;
+        }
+
+        .tab-btn {
+            background: #1c1e22;
+            color: var(--text-muted);
+            border: 1px solid var(--border-color);
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.2s ease;
+        }
+
+        .tab-btn.active {
+            background: var(--text-main);
+            color: var(--bg-color);
+            font-weight: bold;
+            border-color: var(--text-main);
+        }
+
+        .tab-btn:hover:not(.active) {
+            border-color: var(--text-muted);
+            color: var(--text-main);
+        }
+
+        .viewing-archive-notice {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(11, 12, 14, 0.85);
+            z-index: 8;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-weight: bold;
+            color: #ffaa00;
+            border-radius: 12px;
+            pointer-events: none;
+            display: none;
+        }
+
+        .footer {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-top: 8px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="chart-container">
+        <div id="archive-banner" class="viewing-archive-notice">HISTORICAL ARCHIVE VIEW (PAST EPOCH)</div>
+
+        <div class="header">
+            <div>
+                <h2 id="view-title" style="font-size: 1rem; color: var(--text-muted); font-weight: 500;">BTC/USDT Live Channel</h2>
+                <div style="display:flex; align-items:center;">
+                    <div id="live-price" class="price-display">Loading WS...</div>
+                    
+                    <div id="up-arrows" class="momentum-indicator" style="color: var(--up-color);">
+                        <span id="u1">▲</span><span id="u2">▲</span><span id="u3">▲</span>
+                    </div>
+                    <div id="down-arrows" class="momentum-indicator" style="color: var(--down-color);">
+                        <span id="d1">▼</span><span id="d2">▼</span><span id="d3">▼</span>
+                    </div>
+                </div>
+                <div class="target-box">Starting Base Value: <span id="strike-price">---</span></div>
+            </div>
+            <div style="text-align: right;">
+                <div id="time-left" style="font-size: 1.5rem; font-weight: bold; font-variant-numeric: tabular-nums; color: #fff;">5:00</div>
+                <div id="cycle-label" style="font-size: 0.75rem; color: var(--text-muted);">Current Running Slot</div>
+            </div>
+        </div>
+
+        <div class="graph-area">
+            <canvas id="liveChart"></canvas>
+            <div id="floating-tag"></div>
+
+            <div id="x-axis-container">
+                <span id="x-start">0s</span>
+                <span id="x-mid">150s</span>
+                <span id="x-end">300s</span>
+            </div>
+        </div>
+
+        <div class="history-controls">
+            <div class="history-title">
+                <span>Time Machine (Previous Slides)</span>
+                <span id="history-counter">Available Slides: 0 / 5</span>
+            </div>
+            <div id="history-tabs-container" class="history-tabs">
+                <button class="tab-btn active" onclick="switchView('live')">Live Stream</button>
+                </div>
+        </div>
+
+        <div class="footer">
+            <div>Data Pipeline: <strong>Binance Stream</strong></div>
+            <div>Consecutive Trend Velocity: <strong id="streak-timer" style="color: #fff;">0s</strong></div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('liveChart');
+        const ctx = canvas.getContext('2d');
+        const priceElement = document.getElementById('live-price');
+        const strikeElement = document.getElementById('strike-price');
+        const timeLeftElement = document.getElementById('time-left');
+        const streakTimerElement = document.getElementById('streak-timer');
+        const floatingTag = document.getElementById('floating-tag');
+        const tabsContainer = document.getElementById('history-tabs-container');
+        const archiveBanner = document.getElementById('archive-banner');
+        const viewTitle = document.getElementById('view-title');
+        const cycleLabel = document.getElementById('cycle-label');
+        const historyCounter = document.getElementById('history-counter');
+
+        // State Tracking Core Engine Configuration
+        let priceData = []; 
+        let strikePrice = null;
+        let lastPrice = null;
+        let intervalSeconds = 0;
+        const maxInterval = 300; 
+
+        // Persistence Streaks Memory Engine
+        let upStreakSeconds = 0;
+        let downStreakSeconds = 0;
+
+        // Historical Repository Memory Slides (Cap: 5)
+        let historicalSlides = [];
+        let currentMode = 'live'; // 'live' or active index number string
+
+        function resizeCanvas() {
+            canvas.width = canvas.parentElement.clientWidth;
+            canvas.height = canvas.parentElement.clientHeight;
+            drawChart();
+        }
+        window.addEventListener('resize', resizeCanvas);
+        setTimeout(resizeCanvas, 200);
+
+        function drawChart() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Branch control: Decide whether to build current stack or render historic slice copies
+            let activeDataset = [];
+            let activeStrike = 0;
+
+            if (currentMode === 'live') {
+                activeDataset = priceData;
+                activeStrike = strikePrice;
+                archiveBanner.style.display = "none";
+                floatingTag.style.display = activeDataset.length > 0 ? "block" : "none";
+            } else {
+                const archiveItem = historicalSlides[parseInt(currentMode)];
+                if (!archiveItem) return;
+                activeDataset = archiveItem.dataset;
+                activeStrike = archiveItem.strike;
+                archiveBanner.style.display = "flex";
+                floatingTag.style.display = "none"; // Hide tracking tag on historical copies
+            }
+
+            if (activeDataset.length === 0) return;
+
+            const paddingY = 40;
+            const paddingX = 15;
+            const prices = activeDataset.map(d => d.price);
+            
+            const minPrice = Math.min(...prices, activeStrike) * 0.9996;
+            const maxPrice = Math.max(...prices, activeStrike) * 1.0004;
+            const priceRange = maxPrice - minPrice;
+
+            const getX = (index) => (index / (maxInterval - 1)) * (canvas.width - paddingX * 2) + paddingX;
+            const getY = (val) => canvas.height - (((val - minPrice) / priceRange) * (canvas.height - paddingY * 2) + paddingY);
+
+            // 1. Plot starting line boundary
+            ctx.beginPath();
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([4, 4]);
+            const strikeY = getY(activeStrike);
+            ctx.moveTo(0, strikeY);
+            ctx.lineTo(canvas.width, strikeY);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // 2. Draw graph tracks
+            for (let i = 1; i < activeDataset.length; i++) {
+                ctx.beginPath();
+                ctx.lineWidth = 2.5;
+                ctx.strokeStyle = activeDataset[i].price >= activeStrike ? '#00ff88' : '#ff3355';
+                ctx.moveTo(getX(i - 1), getY(activeDataset[i - 1].price));
+                ctx.lineTo(getX(i), getY(activeDataset[i].price));
+                ctx.stroke();
+            }
+
+            // 3. Pinpoint tag calculation for Live mode
+            if (currentMode === 'live') {
+                const lastIdx = activeDataset.length - 1;
+                const headX = getX(lastIdx);
+                const headY = getY(activeDataset[lastIdx].price);
+
+                // Compute absolute divergence distance change from base genesis point
+                const currentDeltaValue = lastPrice - activeStrike;
+                const sign = currentDeltaValue >= 0 ? '+' : '';
+                const formattedDelta = sign + currentDeltaValue.toFixed(2);
+                const percentageChange = ((currentDeltaValue) / activeStrike * 100).toFixed(3);
+
+                floatingTag.innerHTML = `Diff: ${formattedDelta} (${sign}${percentageChange}%)`;
+                floatingTag.className = lastPrice >= activeStrike ? "up" : "down";
+                
+                floatingTag.style.left = `${headX}px`;
+                floatingTag.style.top = `${headY}px`;
+
+                if (headX > canvas.width * 0.65) {
+                    floatingTag.style.transform = 'translate(-105%, -50%)';
+                } else {
+                    floatingTag.style.transform = 'translate(12px, -50%)';
+                }
+            }
+        }
+
+        // Arrow Control State Machine Logic
+        function manageArrowBlinking(currentPrice) {
+            if (!lastPrice) return;
+
+            // Determine ticking trend direction
+            if (currentPrice > lastPrice) {
+                upStreakSeconds++;
+                downStreakSeconds = 0; 
+                streakTimerElement.innerText = `Upwards for ${upStreakSeconds}s`;
+            } else if (currentPrice < lastPrice) {
+                downStreakSeconds++;
+                upStreakSeconds = 0; 
+                streakTimerElement.innerText = `Downwards for ${downStreakSeconds}s`;
+            }
+
+            // Reset element arrays
+            document.getElementById('u1').style.display = 'none';
+            document.getElementById('u2').style.display = 'none';
+            document.getElementById('u3').style.display = 'none';
+            document.getElementById('d1').style.display = 'none';
+            document.getElementById('d2').style.display = 'none';
+            document.getElementById('d3').style.display = 'none';
+
+            // Upward Arrow Activation Layers
+            if (upStreakSeconds >= 1)  document.getElementById('u1').style.display = 'inline';
+            if (upStreakSeconds >= 5)  document.getElementById('u2').style.display = 'inline';
+            if (upStreakSeconds >= 10) document.getElementById('u3').style.display = 'inline';
+
+            // Downward Arrow Activation Layers
+            if (downStreakSeconds >= 1)  document.getElementById('d1').style.display = 'inline';
+            if (downStreakSeconds >= 5)  document.getElementById('d2').style.display = 'inline';
+            if (downStreakSeconds >= 10) document.getElementById('d3').style.display = 'inline';
+        }
+
+        function connectMarketFeed() {
+            const ws = new WebSocket('wss://stream.binance.com:9443/ws/btcusdt@ticker');
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                const currentPrice = parseFloat(data.c);
+
+                if (!strikePrice) {
+                    strikePrice = currentPrice;
+                    strikeElement.innerText = `$${strikePrice.toLocaleString()}`;
+                    updateXAxisTimestamps();
+                }
+
+                manageArrowBlinking(currentPrice);
+
+                if (currentMode === 'live') {
+                    priceElement.innerText = `$${currentPrice.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+                    priceElement.style.color = currentPrice >= strikePrice ? "var(--up-color)" : "var(--down-color)";
+                }
+
+                lastPrice = currentPrice;
+            };
+            ws.onclose = () => setTimeout(connectMarketFeed, 2000);
+        }
+
+        function updateXAxisTimestamps() {
+            const now = new Date();
+            const formatTime = (d) => d.toTimeString().split(' ')[0].substring(0, 5);
+            document.getElementById('x-start').innerText = formatTime(now);
+            document.getElementById('x-mid').innerText = "+150s";
+            document.getElementById('x-end').innerText = formatTime(new Date(now.getTime() + 300000));
+        }
+
+        // Time Machine Slide Engine Processing
+        function storeCompletedEpoch() {
+            if (priceData.length === 0) return;
+
+            const labelTimestamp = new Date().toTimeString().split(' ')[0].substring(0, 5);
+
+            // Insert slice packet back into front position
+            historicalSlides.unshift({
+                timestamp: labelTimestamp,
+                dataset: [...priceData],
+                strike: strikePrice
+            });
+
+            // Keep rolling history restricted strictly to top 5 items
+            if (historicalSlides.length > 5) {
+                historicalSlides.pop();
+            }
+
+            historyCounter.innerText = `Available Slides: ${historicalSlides.length} / 5`;
+            rebuildHistoryUIElements();
+        }
+
+        function rebuildHistoryUIElements() {
+            // Re-render HTML tab options completely
+            let htmlStr = `<button id="btn-live" class="tab-btn ${currentMode === 'live' ? 'active' : ''}" onclick="switchView('live')">Live Stream</button>`;
+            
+            historicalSlides.forEach((slide, idx) => {
+                htmlStr += `<button id="btn-${idx}" class="tab-btn ${currentMode === String(idx) ? 'active' : ''}" onclick="switchView('${idx}')">Past Slot (${slide.timestamp})</button>`;
+            });
+
+            tabsContainer.innerHTML = htmlStr;
+        }
+
+        function switchView(targetMode) {
+            currentMode = targetMode;
+            
+            // Remove highlighting active styling attributes everywhere
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+
+            if (targetMode === 'live') {
+                document.getElementById('btn-live').classList.add('active');
+                viewTitle.innerText = "BTC/USDT Live Channel";
+                cycleLabel.innerText = "Current Running Slot";
+                if(lastPrice) {
+                    priceElement.innerText = `$${lastPrice.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+                    priceElement.style.color = lastPrice >= strikePrice ? "var(--up-color)" : "var(--down-color)";
+                }
+            } else {
+                const targetIdx = parseInt(targetMode);
+                document.getElementById(`btn-${targetIdx}`).classList.add('active');
+                
+                const slide = historicalSlides[targetIdx];
+                viewTitle.innerText = `Archive Block Context`;
+                cycleLabel.innerText = `Settled at ${slide.timestamp}`;
+                
+                const closingPrice = slide.dataset[slide.dataset.length - 1].price;
+                priceElement.innerText = `$${closingPrice.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+                priceElement.style.color = closingPrice >= slide.strike ? "var(--up-color)" : "var(--down-color)";
+            }
+            drawChart();
+        }
+
+        function runIntervalClock() {
+            setInterval(() => {
+                if (!lastPrice) return;
+
+                intervalSeconds++;
+
+                // Track continuous sequence metrics inside graph coordinates map
+                if (currentMode === 'live') {
+                    priceData.push({ time: intervalSeconds, price: lastPrice });
+                }
+
+                // Countdown math rendering
+                const remaining = maxInterval - intervalSeconds;
+                const mins = Math.floor(remaining / 60);
+                const secs = remaining % 60;
+                
+                if (currentMode === 'live') {
+                    timeLeftElement.innerText = `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+                }
+
+                // Swap slots on complete timeout
+                if (intervalSeconds >= maxInterval) {
+                    storeCompletedEpoch(); // Copy contents to back-in-time array slider
+                    intervalSeconds = 0;
+                    priceData = [];
+                    strikePrice = lastPrice;
+                    strikeElement.innerText = `$${strikePrice.toLocaleString()}`;
+                    updateXAxisTimestamps();
+                    
+                    // Force live stream perspective return to avoid freeze lock states
+                    if(currentMode !== 'live') {
+                        switchView('live');
+                    }
+                }
+
+                drawChart();
+            }, 1000);
+        }
+
+        connectMarketFeed();
+        runIntervalClock();
+    </script>
+</body>
+</html>
