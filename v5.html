@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Polymarket BTC Live Tracker</title>
+<style>
+    :root {
+        --bg-color: #0b0c0e;
+        --panel-bg: #141619;
+        --text-main: #ffffff;
+        --text-muted: #848e9c;
+        --border-color: #2b2f36;
+        --up-color: #00ff88;
+        --down-color: #ff3355;
+        --accent: #ffcc00;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+    body {
+        background-color: var(--bg-color);
+        color: var(--text-main);
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+        min-height: 100vh;
+        padding: 20px 10px;
+    }
+    .chart-container {
+        position: relative; /* anchors the annotation overlay */
+        background-color: var(--panel-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 20px;
+        width: 95%;
+        max-width: 920px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    }
+    .header {
+        display: flex; justify-content: space-between; align-items: center;
+        margin-bottom: 14px; border-bottom: 1px solid var(--border-color); padding-bottom: 14px;
+        position: relative; z-index: 110;
+    }
+    .price-display { font-size: 2rem; font-weight: 700; font-variant-numeric: tabular-nums; transition: color 0.15s ease; }
+    .price-display.up { color: var(--up-color); }
+    .price-display.down { color: var(--down-color); }
+    .target-box { font-size: 0.85rem; color: var(--text-muted); margin-top: 4px; }
+    .target-box span { color: var(--text-main); font-weight: 600; }
+
+    .toolbar { position: relative; z-index: 110; display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; align-items: center; }
+    .toolbar.sub { display: none; padding: 8px; background: rgba(255,255,255,0.03); border-radius: 8px; margin-bottom: 10px; }
+    .toolbar.sub.visible { display: flex; }
+
+    .tool-btn {
+        background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-color); color: var(--text-main);
+        padding: 7px 11px; border-radius: 6px; cursor: pointer; font-size: 0.78rem; font-weight: 500;
+        transition: all 0.15s ease; display: flex; align-items: center; gap: 5px; user-select: none; white-space: nowrap;
+    }
+    .tool-btn:hover { border-color: var(--text-muted); background: rgba(255,255,255,0.06); }
+    .tool-btn.active { background: rgba(255,255,255,0.14); border-color: var(--text-main); }
+    .tool-btn.buy { color: var(--up-color); }
+    .tool-btn.buy.active { background: rgba(0,255,136,0.14); border-color: var(--up-color); }
+    .tool-btn.sell { color: var(--down-color); }
+    .tool-btn.sell.active { background: rgba(255,51,85,0.14); border-color: var(--down-color); }
+    .tool-btn.pencil.active, .tool-btn.text-tool.active { background: rgba(255,204,0,0.14); border-color: var(--accent); color: var(--accent); }
+    .tool-btn.eraser.active { background: rgba(132,142,156,0.2); border-color: var(--text-muted); }
+    .tool-btn.clear { margin-left: auto; color: var(--text-muted); }
+    .tool-btn.clear:hover { color: var(--down-color); border-color: var(--down-color); }
+    .tool-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+    .tool-btn:disabled:hover { border-color: var(--border-color); background: rgba(255,255,255,0.03); }
+
+    select#duration-select {
+        background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); color: var(--text-main);
+        padding: 7px 8px; border-radius: 6px; font-size: 0.78rem; cursor: pointer;
+    }
+
+    .width-group { display: flex; gap: 4px; align-items: center; }
+    .width-btn { width: 30px; height: 26px; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(255,255,255,0.03); cursor: pointer; display:flex; align-items:center; justify-content:center; }
+    .width-btn.active { border-color: var(--accent); background: rgba(255,204,0,0.12); }
+    .width-btn span { display:block; background:#fff; border-radius:2px; }
+
+    input[type=color] { width: 32px; height: 28px; border: 1px solid var(--border-color); border-radius: 6px; background: none; cursor: pointer; padding: 2px; }
+
+    .hint-text { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 10px; min-height: 16px; }
+
+    .graph-area {
+        position: relative; height: 320px; width: 100%; margin-bottom: 12px;
+        overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch;
+        border-bottom: 1px solid var(--border-color);
+    }
+    canvas#liveChart { position: absolute; top: 0; left: 0; cursor: crosshair; }
+
+    #annotationCanvas { position: absolute; top: 0; left: 0; z-index: 40; pointer-events: none; }
+
+    .footer { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 4px; position: relative; z-index: 110; }
+    .status-badge { display: inline-flex; align-items: center; padding: 4px 8px; background: rgba(255,255,255,0.05); border-radius: 6px; font-size: 0.8rem; }
+    .dot { width: 6px; height: 6px; border-radius: 50%; margin-right: 6px; background-color: var(--text-muted); }
+    .dot.connected { background-color: var(--up-color); box-shadow: 0 0 8px var(--up-color); }
+
+    .drawings-panel { position: relative; z-index: 110; margin-top: 14px; border-top: 1px solid var(--border-color); padding-top: 12px; }
+    .drawings-panel h3 { font-size: 0.72rem; color: var(--text-muted); margin-bottom: 8px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px; }
+    .drawing-item { display: flex; justify-content: space-between; align-items: center; padding: 7px 10px; background: rgba(255,255,255,0.03); border-radius: 6px; margin-bottom: 6px; font-size: 0.82rem; }
+    .drawing-item .left { display: flex; align-items: center; gap: 8px; }
+    .drawing-item .swatch { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .drawing-item .pct { font-variant-numeric: tabular-nums; font-size: 0.78rem; margin-left: 6px; }
+    .drawing-item .del-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 1rem; padding: 0 4px; }
+    .drawing-item .del-btn:hover { color: var(--down-color); }
+    .empty-hint { color: var(--text-muted); font-size: 0.8rem; font-style: italic; }
+
+    .text-input-overlay {
+        position: absolute; z-index: 120; background: rgba(20,22,25,0.9); border: 1px dashed var(--accent);
+        outline: none; resize: none; padding: 2px 4px; font-size: 15px; line-height: 1.2; min-width: 60px; min-height: 22px;
+    }
+
+    @media (max-width: 600px) {
+        .graph-area { height: 240px; }
+        .chart-container { padding: 14px; }
+        .price-display { font-size: 1.5rem; }
+    }
+</style>
+</head>
+<body>
+
+<div class="chart-container" id="chart-container">
+    <div class="header">
+        <div>
+            <h2 style="font-size: 1.05rem; color: var(--text-muted); font-weight: 500;">BTC/USDT Live Interval</h2>
+            <div id="live-price" class="price-display">Loading...</div>
+            <div class="target-box">Price to Beat: <span id="strike-price">---</span></div>
+        </div>
+        <div style="text-align: right;">
+            <div class="status-badge" style="margin-bottom: 8px;">
+                <span id="status-dot" class="dot"></span>
+                <span id="status-text">Connecting WebSocket...</span>
+            </div>
+            <div id="time-left" style="font-size: 1.05rem; font-weight: bold; font-variant-numeric: tabular-nums;">5:00</div>
+        </div>
+    </div>
+
+    <div class="toolbar">
+        <button class="tool-btn active" data-mode="none" id="btn-cursor" title="Select / move / delete lines">↖ Cursor</button>
+        <button class="tool-btn buy" data-mode="addBuy" id="btn-buy" title="Mark a buy level">＋ Buy</button>
+        <button class="tool-btn sell" data-mode="addSell" id="btn-sell" title="Mark a sell level">＋ Sell</button>
+        <button class="tool-btn" data-mode="trendline" id="btn-trend" title="Draw a trend line">╱ Trend</button>
+        <button class="tool-btn pencil" data-mode="pencil" id="btn-pencil" title="Freehand pencil">✎ Pencil</button>
+        <button class="tool-btn eraser" data-mode="eraser" id="btn-eraser" title="Erase pencil / text">🧹 Eraser</button>
+        <button class="tool-btn text-tool" data-mode="text" id="btn-text" title="Add text">Aa Text</button>
+        <button class="tool-btn" id="btn-undo" title="Undo (Ctrl+Z)">↺ Undo</button>
+        <button class="tool-btn" id="btn-redo" title="Redo (Ctrl+Shift+Z)">↻ Redo</button>
+        <select id="duration-select" title="Window length before the chart resets">
+            <option value="180">3 min</option>
+            <option value="300" selected>5 min</option>
+            <option value="420">7 min</option>
+            <option value="600">10 min</option>
+            <option value="900">15 min</option>
+            <option value="1200">20 min</option>
+            <option value="1800">30 min</option>
+        </select>
+        <button class="tool-btn clear" id="btn-clear">Clear All</button>
+    </div>
+
+    <div class="toolbar sub" id="pencil-options">
+        <span style="font-size:0.75rem;color:var(--text-muted);">Color</span>
+        <input type="color" id="draw-color" value="#ffcc00">
+        <span class="width-group" id="width-group">
+            <span style="font-size:0.75rem;color:var(--text-muted);margin-right:2px;">Weight</span>
+            <button class="width-btn" data-width="1.5" title="Thin"><span style="width:12px;height:1.5px;"></span></button>
+            <button class="width-btn active" data-width="3" title="Medium"><span style="width:12px;height:3px;"></span></button>
+            <button class="width-btn" data-width="6" title="Thick"><span style="width:12px;height:6px;"></span></button>
+        </span>
+    </div>
+
+    <div class="hint-text" id="hint-text">Click "Buy" or "Sell", then click the chart to mark a level. Hover an existing line to see a ✕ to remove it, or drag it to reposition.</div>
+
+    <div class="graph-area" id="graph-area">
+        <canvas id="liveChart"></canvas>
+    </div>
+    <canvas id="annotationCanvas"></canvas>
+
+    <div class="footer">
+        <div>Feed: <strong style="color:#fff;">Binance Direct WS</strong></div>
+        <div>Market Condition: <strong id="trend-indicator" style="transition: color 0.2s;">NEUTRAL</strong></div>
+        <div>Window Progress: <span id="progress-text" style="color:#fff;">0 / 300s</span></div>
+    </div>
+
+    <div class="drawings-panel">
+        <h3>Marked Levels</h3>
+        <div id="drawings-list"><div class="empty-hint">No levels marked yet — add a buy or sell line above.</div></div>
+    </div>
+</div>
+
+<script>
+(function () {
+    const chartContainer = document.getElementById('chart-container');
+    const graphArea = document.getElementById('graph-area');
+    const canvas = document.getElementById('liveChart');
+    const ctx = canvas.getContext('2d');
+    const annoCanvas = document.getElementById('annotationCanvas');
+    const actx = annoCanvas.getContext('2d');
+
+    const priceElement = document.getElementById('live-price');
+    const strikeElement = document.getElementById('strike-price');
+    const timeLeftElement = document.getElementById('time-left');
+    const statusDot = document.getElementById('status-dot');
+    const statusText = document.getElementById('status-text');
+    const trendIndicator = document.getElementById('trend-indicator');
+    const progressText = document.getElementById('progress-text');
+    const drawingsListEl = document.getElementById('drawings-list');
+    const hintText = document.getElementById('hint-text');
+    const pencilOptions = document.getElementById('pencil-options');
+    const widthGroup = document.getElementById('width-group');
+    const colorInput = document.getElementById('draw-color');
+    const durationSelect = document.getElementById('duration-select');
+    const btnUndo = document.getElementById('btn-undo');
+    const btnRedo = document.getElementById('btn-redo');
+
+    // ---------------- Core price state ----------------
+    let priceData = [];
+    let strikePrice = null;
+    let lastPrice = null;
+    let intervalSeconds = 0;
+    const DEFAULT_DURATION = 300;
+    let maxInterval = DEFAULT_DURATION;
+
+    // ---------------- Drawing state ----------------
+    let chartElements = [];  // {id,type:'hline'|'trendline', ...} — price/time domain
+    let annotations = [];    // {id,type:'freehand'|'text', ...} — container-fraction domain
+    let nextId = 1;
+    let drawMode = 'none';
+    let currentColor = '#ffcc00';
+    let currentWidth = 3;
+
+    let trendlineDraft = null;
+    let draggingLine = null;
+    let hoverPos = null;
+    let currentHoverBadge = null;
+    let scaleParams = null;
+    let pixelsPerSecond = 1;
+    let userScrolledAway = false;
+
+    let isDrawingStroke = false;
+    let currentStroke = null;
+    let isErasing = false;
+    let erasedThisDrag = false;
+    let activeTextInput = null;
+
+    const PAD_LEFT = 12, PAD_RIGHT = 66, PAD_TOP = 16, PAD_BOTTOM = 26;
+
+    // ---------------- History (undo/redo) ----------------
+    let history = [snapshot()];
+    let historyIndex = 0;
+
+    function snapshot() {
+        return JSON.stringify({ chartElements, annotations });
+    }
+    function pushHistory() {
+        history = history.slice(0, historyIndex + 1);
+        history.push(snapshot());
+        historyIndex++;
+        updateUndoRedoButtons();
+    }
+    function restoreSnapshot(str) {
+        const s = JSON.parse(str);
+        chartElements = s.chartElements;
+        annotations = s.annotations;
+    }
+    function undo() {
+        if (historyIndex <= 0) return;
+        historyIndex--;
+        restoreSnapshot(history[historyIndex]);
+        renderDrawingsList(); drawChart(); renderAnnotations(); updateUndoRedoButtons();
+    }
+    function redo() {
+        if (historyIndex >= history.length - 1) return;
+        historyIndex++;
+        restoreSnapshot(history[historyIndex]);
+        renderDrawingsList(); drawChart(); renderAnnotations(); updateUndoRedoButtons();
+    }
+    function updateUndoRedoButtons() {
+        btnUndo.disabled = historyIndex <= 0;
+        btnRedo.disabled = historyIndex >= history.length - 1;
+    }
+    btnUndo.addEventListener('click', undo);
+    btnRedo.addEventListener('click', redo);
+    document.addEventListener('keydown', (e) => {
+        const tag = (e.target && e.target.tagName) || '';
+        if (tag === 'TEXTAREA' || tag === 'INPUT') return;
+        if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); }
+        else if ((e.ctrlKey || e.metaKey) && (e.shiftKey && e.key.toLowerCase() === 'z' || e.key.toLowerCase() === 'y')) { e.preventDefault(); redo(); }
+    });
+
+    function formatPrice(v) { return `$${v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
+    function formatTime(sec) { const m = Math.floor(sec / 60), s = Math.floor(sec % 60); return `${m}:${s < 10 ? '0' : ''}${s}`; }
+
+    function distToSegment(px, py, x1, y1, x2, y2) {
+        const dx = x2 - x1, dy = y2 - y1;
+        const len2 = dx * dx + dy * dy;
+        let t = len2 === 0 ? 0 : ((px - x1) * dx + (py - y1) * dy) / len2;
+        t = Math.max(0, Math.min(1, t));
+        const cx = x1 + t * dx, cy = y1 + t * dy;
+        return Math.hypot(px - cx, py - cy);
+    }
+
+    // ---------------- Canvas sizing (responsive + non-destructive duration extension) ----------------
+    function computeContentWidth() { return Math.round(PAD_LEFT + PAD_RIGHT + pixelsPerSecond * maxInterval); }
+
+    function resizeCanvas(rescale) {
+        const visibleWidth = graphArea.clientWidth;
+        const visibleHeight = graphArea.clientHeight;
+        if (rescale || !pixelsPerSecond || pixelsPerSecond < 0.01) {
+            pixelsPerSecond = Math.max(0.2, (visibleWidth - PAD_LEFT - PAD_RIGHT) / DEFAULT_DURATION);
+        }
+        const finalWidth = Math.max(computeContentWidth(), visibleWidth);
+        canvas.width = finalWidth;
+        canvas.height = visibleHeight;
+        canvas.style.width = finalWidth + 'px';
+        canvas.style.height = visibleHeight + 'px';
+        drawChart();
+        if (!userScrolledAway) graphArea.scrollLeft = graphArea.scrollWidth;
+    }
+
+    function syncAnnotationCanvas() {
+        const w = chartContainer.clientWidth, h = chartContainer.clientHeight;
+        annoCanvas.width = w; annoCanvas.height = h;
+        annoCanvas.style.width = w + 'px'; annoCanvas.style.height = h + 'px';
+        renderAnnotations();
+    }
+
+    window.addEventListener('resize', () => { resizeCanvas(true); syncAnnotationCanvas(); });
+    if (window.ResizeObserver) {
+        new ResizeObserver(() => syncAnnotationCanvas()).observe(chartContainer);
+    }
+    graphArea.addEventListener('scroll', () => {
+        const threshold = 40;
+        userScrolledAway = graphArea.scrollLeft + graphArea.clientWidth < graphArea.scrollWidth - threshold;
+    });
+    setTimeout(() => { resizeCanvas(true); syncAnnotationCanvas(); }, 100);
+
+    // ---------------- Chart rendering ----------------
+    function drawChart() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const width = canvas.width, height = canvas.height;
+
+        const prices = priceData.map(d => d.price);
+        const hlinePrices = chartElements.filter(d => d.type === 'hline').map(d => d.price);
+        const allPrices = prices.concat(hlinePrices);
+        if (strikePrice) allPrices.push(strikePrice);
+        if (allPrices.length === 0) { scaleParams = null; return; }
+
+        let minPrice = Math.min(...allPrices) * 0.9998;
+        let maxPrice = Math.max(...allPrices) * 1.0002;
+        if (minPrice === maxPrice) { minPrice *= 0.999; maxPrice *= 1.001; }
+        const priceRange = maxPrice - minPrice;
+
+        const getX = (t) => PAD_LEFT + t * pixelsPerSecond;
+        const getY = (val) => height - PAD_BOTTOM - ((val - minPrice) / priceRange) * (height - PAD_TOP - PAD_BOTTOM);
+        const priceFromY = (y) => minPrice + ((height - PAD_BOTTOM - y) / (height - PAD_TOP - PAD_BOTTOM)) * priceRange;
+        const timeFromX = (x) => Math.max(0, (x - PAD_LEFT) / pixelsPerSecond);
+        scaleParams = { getX, getY, priceFromY, timeFromX };
+
+        const scrollLeft = graphArea.scrollLeft || 0;
+        const tagX = Math.min(scrollLeft + graphArea.clientWidth, width) - PAD_RIGHT;
+
+        // Grid
+        ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+        ctx.fillStyle = '#848e9c';
+        ctx.font = '11px -apple-system, sans-serif';
+        ctx.lineWidth = 1;
+        for (let i = 0; i <= 5; i++) {
+            const val = minPrice + (priceRange * i / 5);
+            const y = getY(val);
+            ctx.beginPath(); ctx.moveTo(PAD_LEFT, y); ctx.lineTo(width - PAD_RIGHT, y); ctx.stroke();
+            ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+            ctx.fillText(val.toFixed(0), width - PAD_RIGHT + 6, y);
+        }
+        for (let t = 0; t <= maxInterval; t += 60) {
+            const x = getX(t);
+            ctx.beginPath(); ctx.moveTo(x, PAD_TOP); ctx.lineTo(x, height - PAD_BOTTOM); ctx.stroke();
+            ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+            ctx.fillText(formatTime(t), x, height - PAD_BOTTOM + 6);
+        }
+        ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+        ctx.beginPath();
+        ctx.moveTo(PAD_LEFT, height - PAD_BOTTOM); ctx.lineTo(width - PAD_RIGHT, height - PAD_BOTTOM);
+        ctx.moveTo(PAD_LEFT, PAD_TOP); ctx.lineTo(PAD_LEFT, height - PAD_BOTTOM);
+        ctx.stroke();
+
+        // Strike anchor
+        if (strikePrice) {
+            ctx.beginPath(); ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 4]);
+            const y = getY(strikePrice);
+            ctx.moveTo(PAD_LEFT, y); ctx.lineTo(width - PAD_RIGHT, y); ctx.stroke(); ctx.setLineDash([]);
+        }
+
+        // User lines
+        chartElements.forEach(d => {
+            if (d.type === 'hline') {
+                const y = getY(d.price);
+                ctx.beginPath(); ctx.strokeStyle = d.color; ctx.lineWidth = d === draggingLine ? 2.5 : 1.5;
+                ctx.setLineDash([6, 4]); ctx.moveTo(PAD_LEFT, y); ctx.lineTo(width - PAD_RIGHT, y); ctx.stroke(); ctx.setLineDash([]);
+                ctx.fillStyle = d.color; ctx.fillRect(tagX, y - 9, PAD_RIGHT - 2, 18);
+                ctx.fillStyle = '#0b0c0e'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+                ctx.font = 'bold 10px -apple-system, sans-serif'; ctx.fillText(d.label, tagX + 5, y);
+                ctx.font = '11px -apple-system, sans-serif';
+            } else if (d.type === 'trendline') {
+                ctx.beginPath(); ctx.strokeStyle = d.color; ctx.lineWidth = 2;
+                ctx.moveTo(getX(d.t1), getY(d.p1)); ctx.lineTo(getX(d.t2), getY(d.p2)); ctx.stroke();
+            }
+        });
+
+        if (trendlineDraft && hoverPos) {
+            ctx.beginPath(); ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 2; ctx.setLineDash([3, 3]);
+            ctx.moveTo(getX(trendlineDraft.t1), getY(trendlineDraft.p1)); ctx.lineTo(hoverPos.x, hoverPos.y);
+            ctx.stroke(); ctx.setLineDash([]);
+        }
+
+        // Price line
+        if (priceData.length >= 2) {
+            for (let i = 1; i < priceData.length; i++) {
+                ctx.beginPath(); ctx.lineWidth = 2.5;
+                ctx.strokeStyle = priceData[i].price >= strikePrice ? '#00ff88' : '#ff3355';
+                ctx.moveTo(getX(priceData[i - 1].time), getY(priceData[i - 1].price));
+                ctx.lineTo(getX(priceData[i].time), getY(priceData[i].price));
+                ctx.stroke();
+            }
+            const last = priceData[priceData.length - 1];
+            const headX = getX(last.time), headY = getY(last.price);
+            const trendColor = last.price >= strikePrice ? '#00ff88' : '#ff3355';
+            ctx.beginPath(); ctx.arc(headX, headY, 5, 0, 2 * Math.PI);
+            ctx.fillStyle = '#ffffff'; ctx.shadowBlur = 10; ctx.shadowColor = trendColor; ctx.fill(); ctx.shadowBlur = 0;
+            ctx.fillStyle = trendColor; ctx.fillRect(tagX, headY - 9, PAD_RIGHT - 2, 18);
+            ctx.fillStyle = '#0b0c0e'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+            ctx.font = 'bold 10px -apple-system, sans-serif'; ctx.fillText(last.price.toFixed(0), tagX + 5, headY);
+            ctx.font = '11px -apple-system, sans-serif';
+        }
+
+        // Hover: crosshair (cursor mode) + delete badge on nearby line
+        currentHoverBadge = null;
+        if (hoverPos && drawMode === 'none') {
+            let best = null, bestDist = 10;
+            chartElements.forEach(d => {
+                if (d.type === 'hline') {
+                    const dist = Math.abs(hoverPos.y - getY(d.price));
+                    if (dist < bestDist) { bestDist = dist; best = { el: d, x: hoverPos.x, y: getY(d.price) }; }
+                } else if (d.type === 'trendline') {
+                    const dist = distToSegment(hoverPos.x, hoverPos.y, getX(d.t1), getY(d.p1), getX(d.t2), getY(d.p2));
+                    if (dist < bestDist) { bestDist = dist; best = { el: d, x: (getX(d.t1) + getX(d.t2)) / 2, y: (getY(d.p1) + getY(d.p2)) / 2 }; }
+                }
+            });
+            if (best) currentHoverBadge = { el: best.el, x: best.x, y: best.y - 18 };
+        }
+        if (hoverPos && drawMode !== 'trendline') {
+            ctx.beginPath(); ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.setLineDash([2, 3]); ctx.lineWidth = 1;
+            ctx.moveTo(PAD_LEFT, hoverPos.y); ctx.lineTo(width - PAD_RIGHT, hoverPos.y);
+            ctx.moveTo(hoverPos.x, PAD_TOP); ctx.lineTo(hoverPos.x, height - PAD_BOTTOM);
+            ctx.stroke(); ctx.setLineDash([]);
+            const hoverPrice = priceFromY(hoverPos.y);
+            ctx.fillStyle = '#ffffff'; ctx.fillRect(tagX, hoverPos.y - 9, PAD_RIGHT - 2, 18);
+            ctx.fillStyle = '#0b0c0e'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+            ctx.font = 'bold 10px -apple-system, sans-serif'; ctx.fillText(hoverPrice.toFixed(0), tagX + 5, hoverPos.y);
+            ctx.font = '11px -apple-system, sans-serif';
+        }
+        if (currentHoverBadge) {
+            ctx.beginPath(); ctx.arc(currentHoverBadge.x, currentHoverBadge.y, 9, 0, 2 * Math.PI);
+            ctx.fillStyle = '#ff3355'; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.stroke();
+            ctx.fillStyle = '#fff'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText('✕', currentHoverBadge.x, currentHoverBadge.y + 0.5);
+        }
+    }
+
+    // ---------------- Annotation layer (pencil / eraser / text) ----------------
+    function renderAnnotations() {
+        actx.clearRect(0, 0, annoCanvas.width, annoCanvas.height);
+        const w = annoCanvas.width, h = annoCanvas.height;
+        annotations.forEach(a => {
+            if (a.type === 'freehand') {
+                if (a.points.length < 2) return;
+                actx.beginPath();
+                actx.strokeStyle = a.color; actx.lineWidth = a.width; actx.lineJoin = 'round'; actx.lineCap = 'round';
+                actx.moveTo(a.points[0].xFrac * w, a.points[0].yFrac * h);
+                for (let i = 1; i < a.points.length; i++) actx.lineTo(a.points[i].xFrac * w, a.points[i].yFrac * h);
+                actx.stroke();
+            } else if (a.type === 'text') {
+                actx.fillStyle = a.color;
+                actx.font = `${a.fontSize}px -apple-system, sans-serif`;
+                actx.textAlign = 'left'; actx.textBaseline = 'top';
+                actx.fillText(a.content, a.xFrac * w, a.yFrac * h);
+            }
+        });
+    }
+
+    function annoPos(clientX, clientY) {
+        const rect = annoCanvas.getBoundingClientRect();
+        return { x: clientX - rect.left, y: clientY - rect.top, w: rect.width, h: rect.height };
+    }
+
+    function isInteractiveTarget(el) {
+        return !!(el.closest && el.closest('button, select, input, textarea, .drawing-item'));
+    }
+
+    function eraseNear(x, y, w, h) {
+        const threshold = 14;
+        const before = annotations.length;
+        annotations = annotations.filter(a => {
+            if (a.type === 'text') {
+                const tx = a.xFrac * w, ty = a.yFrac * h;
+                return !(x >= tx - 6 && x <= tx + Math.max(60, a.content.length * a.fontSize * 0.55) && y >= ty - 6 && y <= ty + a.fontSize + 6);
+            }
+            if (a.type === 'freehand') {
+                return !a.points.some(p => Math.hypot(p.xFrac * w - x, p.yFrac * h - y) < threshold);
+            }
+            return true;
+        });
+        if (annotations.length !== before) { erasedThisDrag = true; renderAnnotations(); }
+    }
+
+    function startTextInput(clientX, clientY) {
+        if (activeTextInput) return;
+        const rect = chartContainer.getBoundingClientRect();
+        const ta = document.createElement('textarea');
+        ta.className = 'text-input-overlay';
+        ta.style.left = (clientX - rect.left) + 'px';
+        ta.style.top = (clientY - rect.top) + 'px';
+        ta.style.color = currentColor;
+        ta.style.fontSize = '15px';
+        ta.rows = 1;
+        chartContainer.appendChild(ta);
+        ta.focus();
+        activeTextInput = ta;
+
+        const commit = () => {
+            const content = ta.value.trim();
+            if (content) {
+                const w = chartContainer.clientWidth, h = chartContainer.clientHeight;
+                annotations.push({
+                    id: nextId++, type: 'text', color: currentColor, fontSize: 15,
+                    xFrac: (clientX - rect.left) / w, yFrac: (clientY - rect.top) / h, content
+                });
+                pushHistory();
+                renderAnnotations();
+            }
+            ta.remove();
+            activeTextInput = null;
+            setMode('none');
+        };
+        ta.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commit(); }
+            else if (e.key === 'Escape') { e.preventDefault(); ta.value = ''; commit(); }
+        });
+        ta.addEventListener('blur', commit);
+    }
+
+    // ---------------- Drawings list panel ----------------
+    function renderDrawingsList() {
+        if (chartElements.length === 0) {
+            drawingsListEl.innerHTML = '<div class="empty-hint">No levels marked yet — add a buy or sell line above.</div>';
+            return;
+        }
+        drawingsListEl.innerHTML = '';
+        chartElements.forEach(d => {
+            const item = document.createElement('div'); item.className = 'drawing-item';
+            const left = document.createElement('div'); left.className = 'left';
+            const swatch = document.createElement('span'); swatch.className = 'swatch'; swatch.style.background = d.color;
+            left.appendChild(swatch);
+            const labelText = document.createElement('span');
+            labelText.textContent = d.type === 'hline' ? `${d.label} @ ${formatPrice(d.price)}` : 'Trend line';
+            left.appendChild(labelText);
+            if (d.type === 'hline' && lastPrice) {
+                const pct = ((d.price - lastPrice) / lastPrice) * 100;
+                const pctEl = document.createElement('span'); pctEl.className = 'pct';
+                pctEl.style.color = pct >= 0 ? 'var(--up-color)' : 'var(--down-color)';
+                pctEl.textContent = `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`;
+                left.appendChild(pctEl);
+            }
+            item.appendChild(left);
+            const delBtn = document.createElement('button'); delBtn.className = 'del-btn'; delBtn.textContent = '✕';
+            delBtn.onclick = () => { chartElements = chartElements.filter(x => x.id !== d.id); pushHistory(); renderDrawingsList(); drawChart(); };
+            item.appendChild(delBtn);
+            drawingsListEl.appendChild(item);
+        });
+    }
+
+    // ---------------- Chart canvas pointer handling ----------------
+    function getCanvasPos(clientX, clientY) {
+        const rect = canvas.getBoundingClientRect();
+        return { x: clientX - rect.left, y: clientY - rect.top };
+    }
+
+    function findNearbyHline(y) {
+        if (!scaleParams) return null;
+        return chartElements.find(d => d.type === 'hline' && Math.abs(scaleParams.getY(d.price) - y) < 8) || null;
+    }
+
+    function chartPointerDown(pos) {
+        if (!scaleParams) return;
+        if (currentHoverBadge && Math.hypot(pos.x - currentHoverBadge.x, pos.y - currentHoverBadge.y) < 11) {
+            chartElements = chartElements.filter(x => x.id !== currentHoverBadge.el.id);
+            currentHoverBadge = null;
+            pushHistory(); renderDrawingsList(); drawChart();
+            return;
+        }
+        if (drawMode === 'addBuy' || drawMode === 'addSell') {
+            const price = scaleParams.priceFromY(pos.y);
+            const isBuy = drawMode === 'addBuy';
+            chartElements.push({ id: nextId++, type: 'hline', price, color: isBuy ? '#00ff88' : '#ff3355', label: isBuy ? 'BUY' : 'SELL' });
+            pushHistory(); setMode('none'); renderDrawingsList(); drawChart();
+            return;
+        }
+        if (drawMode === 'trendline') {
+            if (!trendlineDraft) {
+                trendlineDraft = { t1: scaleParams.timeFromX(pos.x), p1: scaleParams.priceFromY(pos.y) };
+            } else {
+                chartElements.push({ id: nextId++, type: 'trendline', t1: trendlineDraft.t1, p1: trendlineDraft.p1, t2: scaleParams.timeFromX(pos.x), p2: scaleParams.priceFromY(pos.y), color: '#ffcc00' });
+                trendlineDraft = null; pushHistory(); setMode('none'); renderDrawingsList();
+            }
+            drawChart();
+            return;
+        }
+        const near = findNearbyHline(pos.y);
+        if (near) { draggingLine = near; canvas.style.cursor = 'ns-resize'; }
+    }
+
+    function chartPointerMove(pos) {
+        hoverPos = pos;
+        if (draggingLine && scaleParams) {
+            draggingLine.price = scaleParams.priceFromY(pos.y);
+            renderDrawingsList();
+        } else if (drawMode === 'none' && scaleParams && findNearbyHline(pos.y)) {
+            canvas.style.cursor = 'ns-resize';
+        } else if (drawMode === 'none') {
+            canvas.style.cursor = 'crosshair';
+        }
+        drawChart();
+    }
+
+    function chartPointerUp() {
+        if (draggingLine) { draggingLine = null; canvas.style.cursor = 'crosshair'; pushHistory(); drawChart(); }
+    }
+
+    canvas.addEventListener('mousedown', (e) => chartPointerDown(getCanvasPos(e.clientX, e.clientY)));
+    canvas.addEventListener('mousemove', (e) => chartPointerMove(getCanvasPos(e.clientX, e.clientY)));
+    window.addEventListener('mouseup', chartPointerUp);
+    canvas.addEventListener('mouseleave', () => { hoverPos = null; currentHoverBadge = null; drawChart(); });
+    canvas.addEventListener('touchstart', (e) => { const t = e.touches[0]; chartPointerDown(getCanvasPos(t.clientX, t.clientY)); }, { passive: true });
+    canvas.addEventListener('touchmove', (e) => { const t = e.touches[0]; chartPointerMove(getCanvasPos(t.clientX, t.clientY)); }, { passive: true });
+    window.addEventListener('touchend', chartPointerUp);
+
+    // ---------------- Annotation layer pointer handling (whole widget) ----------------
+    function annoDown(clientX, clientY, targetEl) {
+        if (isInteractiveTarget(targetEl)) return;
+        const p = annoPos(clientX, clientY);
+        if (drawMode === 'pencil') {
+            isDrawingStroke = true;
+            currentStroke = { id: nextId++, type: 'freehand', color: currentColor, width: currentWidth, points: [{ xFrac: p.x / p.w, yFrac: p.y / p.h }] };
+            annotations.push(currentStroke);
+        } else if (drawMode === 'eraser') {
+            isErasing = true; erasedThisDrag = false;
+            eraseNear(p.x, p.y, p.w, p.h);
+        } else if (drawMode === 'text') {
+            startTextInput(clientX, clientY);
+        }
+    }
+    function annoMove(clientX, clientY) {
+        const p = annoPos(clientX, clientY);
+        if (isDrawingStroke && currentStroke) {
+            currentStroke.points.push({ xFrac: p.x / p.w, yFrac: p.y / p.h });
+            renderAnnotations();
+        } else if (isErasing) {
+            eraseNear(p.x, p.y, p.w, p.h);
+        }
+    }
+    function annoUp() {
+        if (isDrawingStroke) { isDrawingStroke = false; currentStroke = null; pushHistory(); }
+        if (isErasing) { isErasing = false; if (erasedThisDrag) pushHistory(); }
+    }
+
+    annoCanvas.addEventListener('mousedown', (e) => annoDown(e.clientX, e.clientY, e.target));
+    document.addEventListener('mousemove', (e) => { if (isDrawingStroke || isErasing) annoMove(e.clientX, e.clientY); });
+    document.addEventListener('mouseup', annoUp);
+    annoCanvas.addEventListener('touchstart', (e) => { const t = e.touches[0]; if (drawMode === 'pencil' || drawMode === 'eraser' || drawMode === 'text') e.preventDefault(); annoDown(t.clientX, t.clientY, e.target); }, { passive: false });
+    annoCanvas.addEventListener('touchmove', (e) => { if (isDrawingStroke || isErasing) { e.preventDefault(); const t = e.touches[0]; annoMove(t.clientX, t.clientY); } }, { passive: false });
+    document.addEventListener('touchend', annoUp);
+
+    // ---------------- Toolbar wiring ----------------
+    const toolButtons = {
+        none: document.getElementById('btn-cursor'), addBuy: document.getElementById('btn-buy'),
+        addSell: document.getElementById('btn-sell'), trendline: document.getElementById('btn-trend'),
+        pencil: document.getElementById('btn-pencil'), eraser: document.getElementById('btn-eraser'), text: document.getElementById('btn-text')
+    };
+    const hints = {
+        none: 'Click "Buy" or "Sell", then click the chart to mark a level. Hover an existing line to see a ✕ to remove it, or drag it to reposition.',
+        addBuy: 'Click anywhere on the chart to place a BUY level at that price.',
+        addSell: 'Click anywhere on the chart to place a SELL level at that price.',
+        trendline: 'Click a starting point, then click again to finish the trend line.',
+        pencil: 'Draw freehand anywhere on the widget — not just the chart area.',
+        eraser: 'Click or drag over a pencil stroke or text note to remove it.',
+        text: 'Click anywhere on the widget and start typing. Press Enter to place the note.'
+    };
+
+    function setMode(mode) {
+        drawMode = mode;
+        trendlineDraft = null;
+        Object.entries(toolButtons).forEach(([key, btn]) => btn.classList.toggle('active', key === mode));
+        hintText.textContent = hints[mode];
+        const showPencilOptions = mode === 'pencil' || mode === 'text';
+        pencilOptions.classList.toggle('visible', showPencilOptions);
+        widthGroup.style.display = mode === 'pencil' ? 'flex' : 'none';
+        annoCanvas.style.pointerEvents = (mode === 'pencil' || mode === 'eraser' || mode === 'text') ? 'auto' : 'none';
+        annoCanvas.style.cursor = mode === 'eraser' ? 'cell' : (mode === 'pencil' ? 'crosshair' : (mode === 'text' ? 'text' : 'default'));
+        canvas.style.cursor = mode === 'none' ? 'crosshair' : 'crosshair';
+    }
+
+    toolButtons.none.addEventListener('click', () => setMode('none'));
+    toolButtons.addBuy.addEventListener('click', () => setMode(drawMode === 'addBuy' ? 'none' : 'addBuy'));
+    toolButtons.addSell.addEventListener('click', () => setMode(drawMode === 'addSell' ? 'none' : 'addSell'));
+    toolButtons.trendline.addEventListener('click', () => setMode(drawMode === 'trendline' ? 'none' : 'trendline'));
+    toolButtons.pencil.addEventListener('click', () => setMode(drawMode === 'pencil' ? 'none' : 'pencil'));
+    toolButtons.eraser.addEventListener('click', () => setMode(drawMode === 'eraser' ? 'none' : 'eraser'));
+    toolButtons.text.addEventListener('click', () => setMode(drawMode === 'text' ? 'none' : 'text'));
+
+    document.getElementById('btn-clear').addEventListener('click', () => {
+        chartElements = []; annotations = [];
+        pushHistory(); renderDrawingsList(); drawChart(); renderAnnotations();
+    });
+
+    colorInput.addEventListener('input', (e) => { currentColor = e.target.value; });
+    document.querySelectorAll('.width-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.width-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            currentWidth = parseFloat(btn.dataset.width);
+        });
+    });
+
+    // ---------------- Time window control ----------------
+    function resetWindow() {
+        intervalSeconds = 0;
+        priceData = [];
+        strikePrice = lastPrice;
+        if (strikePrice) strikeElement.innerText = formatPrice(strikePrice);
+        chartElements = chartElements.filter(d => d.type !== 'trendline');
+        renderDrawingsList();
+        resizeCanvas(false);
+    }
+
+    durationSelect.addEventListener('change', (e) => {
+        const newDuration = parseInt(e.target.value, 10);
+        maxInterval = newDuration;
+        if (newDuration <= intervalSeconds) {
+            resetWindow();
+        } else {
+            resizeCanvas(false); // keep pixels-per-second fixed — no rescale jump, just more room
+        }
+    });
+
+    // ---------------- Live feed ----------------
+    function connectMarketFeed() {
+        const ws = new WebSocket('wss://stream.binance.com:9443/ws/btcusdt@ticker');
+        ws.onopen = () => { statusDot.className = "dot connected"; statusText.innerText = "Live Connected"; };
+        ws.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            const currentPrice = parseFloat(data.c);
+            if (!strikePrice) { strikePrice = currentPrice; strikeElement.innerText = formatPrice(strikePrice); }
+            if (lastPrice) priceElement.className = "price-display " + (currentPrice >= lastPrice ? "up" : "down");
+            priceElement.innerText = formatPrice(currentPrice);
+            if (currentPrice >= strikePrice) { trendIndicator.innerText = "UP (GREEN ZONE)"; trendIndicator.style.color = "var(--up-color)"; }
+            else { trendIndicator.innerText = "DOWN (RED ZONE)"; trendIndicator.style.color = "var(--down-color)"; }
+            lastPrice = currentPrice;
+            renderDrawingsList();
+        };
+        ws.onerror = () => { statusText.innerText = "Feed Error. Retrying..."; statusDot.className = "dot"; };
+        ws.onclose = () => { statusText.innerText = "Disconnected. Reconnecting..."; statusDot.className = "dot"; setTimeout(connectMarketFeed, 3000); };
+    }
+
+    function runIntervalClock() {
+        setInterval(() => {
+            if (!lastPrice) return;
+            intervalSeconds++;
+            progressText.innerText = `${intervalSeconds} / ${maxInterval}s`;
+            priceData.push({ time: intervalSeconds, price: lastPrice });
+            timeLeftElement.innerText = formatTime(Math.max(0, maxInterval - intervalSeconds));
+            if (intervalSeconds >= maxInterval) resetWindow();
+            drawChart();
+        }, 1000);
+    }
+
+    connectMarketFeed();
+    runIntervalClock();
+    renderDrawingsList();
+    updateUndoRedoButtons();
+})();
+</script>
+</body>
+</html>
