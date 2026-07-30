@@ -1,0 +1,1390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Crypto Live Interval Tracker</title>
+<style>
+    :root {
+        --bg-color: #0b0c0e;
+        --panel-bg: #141619;
+        --panel-bg-2: #1a1d21;
+        --text-main: #ffffff;
+        --text-muted: #848e9c;
+        --text-dim: #5a626e;
+        --border-color: #2b2f36;
+        --up-color: #00ff88;
+        --down-color: #ff3355;
+        --accent: #ffcc00;
+        --up-soft: rgba(0,255,136,0.12);
+        --down-soft: rgba(255,51,85,0.12);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body {
+        background: radial-gradient(1200px 800px at 50% -10%, #16191d 0%, var(--bg-color) 60%);
+        color: var(--text-main);
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+        min-height: 100vh;
+        padding: 20px 10px;
+    }
+    .chart-container {
+        position: relative;
+        background: linear-gradient(180deg, var(--panel-bg-2) 0%, var(--panel-bg) 100%);
+        border: 1px solid var(--border-color);
+        border-radius: 14px;
+        padding: 20px;
+        width: 96%;
+        max-width: 980px;
+        box-shadow: 0 8px 40px rgba(0, 0, 0, 0.55);
+    }
+    .header {
+        display: flex; justify-content: space-between; align-items: flex-start;
+        margin-bottom: 14px; border-bottom: 1px solid var(--border-color); padding-bottom: 14px;
+        position: relative; z-index: 110; gap: 12px; flex-wrap: wrap;
+    }
+    .header .left-head { display: flex; flex-direction: column; gap: 2px; }
+    .sym-row { display: flex; align-items: center; gap: 8px; }
+    select#symbol-select {
+        background: var(--panel-bg); border: 1px solid var(--border-color); color: var(--text-main);
+        padding: 5px 8px; border-radius: 8px; font-size: 0.95rem; font-weight: 600; cursor: pointer;
+    }
+    .pair-sub { font-size: 0.72rem; color: var(--text-muted); font-weight: 500; }
+    .price-display { font-size: 2.3rem; font-weight: 700; font-variant-numeric: tabular-nums; transition: color 0.15s ease; line-height: 1.1; }
+    .price-display.up { color: var(--up-color); }
+    .price-display.down { color: var(--down-color); }
+    .price-change-inline { font-size: 0.9rem; font-weight: 600; font-variant-numeric: tabular-nums; margin-left: 4px; }
+    .target-box { font-size: 0.85rem; color: var(--text-muted); margin-top: 4px; }
+    .target-box span { color: var(--text-main); font-weight: 600; }
+    .target-box .dist { margin-left: 8px; font-variant-numeric: tabular-nums; }
+
+    .right-head { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+    .status-badge { display: inline-flex; align-items: center; padding: 4px 8px; background: rgba(255,255,255,0.05); border-radius: 6px; font-size: 0.8rem; }
+    .dot { width: 6px; height: 6px; border-radius: 50%; margin-right: 6px; background-color: var(--text-muted); transition: background 0.3s; }
+    .dot.connected { background-color: var(--up-color); box-shadow: 0 0 8px var(--up-color); }
+    .dot.error { background-color: var(--down-color); box-shadow: 0 0 8px var(--down-color); }
+    .countdown-wrap { display: flex; align-items: center; gap: 8px; }
+    .countdown-ring { transform: rotate(-90deg); }
+    .countdown-ring .bg { stroke: var(--border-color); }
+    .countdown-ring .fg { stroke: var(--accent); transition: stroke-dashoffset 0.9s linear, stroke 0.3s; stroke-linecap: round; }
+    #time-left { font-size: 1.15rem; font-weight: bold; font-variant-numeric: tabular-nums; }
+
+    .stats-bar {
+        display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px;
+        margin-bottom: 12px; position: relative; z-index: 110;
+    }
+    .stat-cell { background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); border-radius: 8px; padding: 7px 10px; }
+    .stat-cell .lbl { font-size: 0.62rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+    .stat-cell .val { font-size: 0.92rem; font-weight: 600; font-variant-numeric: tabular-nums; margin-top: 2px; }
+
+    .toolbar { position: relative; z-index: 110; display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; align-items: center; }
+    .toolbar.sub { display: none; padding: 8px; background: rgba(255,255,255,0.03); border-radius: 8px; margin-bottom: 10px; align-items: center; gap: 10px; }
+    .toolbar.sub.visible { display: flex; flex-wrap: wrap; }
+
+    .tool-btn {
+        background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-color); color: var(--text-main);
+        padding: 7px 11px; border-radius: 6px; cursor: pointer; font-size: 0.78rem; font-weight: 500;
+        transition: all 0.15s ease; display: flex; align-items: center; gap: 5px; user-select: none; white-space: nowrap;
+    }
+    .tool-btn:hover { border-color: var(--text-muted); background: rgba(255,255,255,0.06); }
+    .tool-btn.active { background: rgba(255,255,255,0.14); border-color: var(--text-main); }
+    .tool-btn.buy { color: var(--up-color); }
+    .tool-btn.buy.active { background: rgba(0,255,136,0.14); border-color: var(--up-color); }
+    .tool-btn.sell { color: var(--down-color); }
+    .tool-btn.sell.active { background: rgba(255,51,85,0.14); border-color: var(--down-color); }
+    .tool-btn.pencil.active, .tool-btn.text-tool.active { background: rgba(255,204,0,0.14); border-color: var(--accent); color: var(--accent); }
+    .tool-btn.eraser.active { background: rgba(132,142,156,0.2); border-color: var(--text-muted); }
+    .tool-btn.clear { margin-left: auto; color: var(--text-muted); }
+    .tool-btn.clear:hover { color: var(--down-color); border-color: var(--down-color); }
+    .tool-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+    .tool-btn:disabled:hover { border-color: var(--border-color); background: rgba(255,255,255,0.03); }
+    .tool-btn.toggle-on { border-color: var(--accent); color: var(--accent); }
+    select#duration-select, select#symbol-select {
+        background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); color: var(--text-main);
+        padding: 7px 8px; border-radius: 6px; font-size: 0.78rem; cursor: pointer;
+    }
+
+    .width-group { display: flex; gap: 4px; align-items: center; }
+    .width-btn { width: 30px; height: 26px; border-radius: 6px; border: 1px solid var(--border-color); background: rgba(255,255,255,0.03); cursor: pointer; display:flex; align-items:center; justify-content:center; }
+    .width-btn.active { border-color: var(--accent); background: rgba(255,204,0,0.12); }
+    .width-btn span { display:block; background:#fff; border-radius:2px; }
+    .swatch-group { display: flex; gap: 4px; align-items: center; }
+    .color-swatch { width: 20px; height: 20px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; }
+    .color-swatch.active { border-color: #fff; }
+    input[type=color] { width: 32px; height: 28px; border: 1px solid var(--border-color); border-radius: 6px; background: none; cursor: pointer; padding: 2px; }
+
+    .hint-text { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 10px; min-height: 16px; }
+
+    .graph-area {
+        position: relative; height: 340px; width: 100%; margin-bottom: 12px;
+        overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch;
+        border-bottom: 1px solid var(--border-color);
+    }
+    canvas#liveChart { position: absolute; top: 0; left: 0; cursor: crosshair; }
+    #annotationCanvas { position: absolute; top: 0; left: 0; z-index: 40; pointer-events: auto; cursor: crosshair; }
+    #annotationCanvas.mode-none { cursor: default; }
+    #annotationCanvas.mode-eraser { cursor: cell; }
+    #annotationCanvas.mode-text { cursor: text; }
+    .scroll-latest {
+        position: absolute; right: 14px; bottom: 34px; z-index: 60; display: none;
+        background: var(--accent); color: #0b0c0e; border: none; border-radius: 20px;
+        padding: 6px 12px; font-size: 0.72rem; font-weight: 700; cursor: pointer; box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+    }
+    .scroll-latest.show { display: block; }
+
+    .footer { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 4px; position: relative; z-index: 110; }
+    .footer strong { color: #fff; }
+
+    .drawings-panel { position: relative; z-index: 110; margin-top: 14px; border-top: 1px solid var(--border-color); padding-top: 12px; }
+    .drawings-panel h3 { font-size: 0.72rem; color: var(--text-muted); margin-bottom: 8px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px; display: flex; justify-content: space-between; }
+    .drawing-item { display: flex; justify-content: space-between; align-items: center; padding: 7px 10px; background: rgba(255,255,255,0.03); border-radius: 6px; margin-bottom: 6px; font-size: 0.82rem; }
+    .drawing-item .left { display: flex; align-items: center; gap: 8px; }
+    .drawing-item .swatch { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .drawing-item .pct { font-variant-numeric: tabular-nums; font-size: 0.78rem; margin-left: 6px; }
+    .drawing-item .hit { font-size: 0.68rem; padding: 1px 6px; border-radius: 4px; margin-left: 6px; font-weight: 600; }
+    .drawing-item .hit.yes { background: var(--up-soft); color: var(--up-color); }
+    .drawing-item .del-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 1rem; padding: 0 4px; }
+    .drawing-item .del-btn:hover { color: var(--down-color); }
+    .empty-hint { color: var(--text-muted); font-size: 0.8rem; font-style: italic; }
+
+    .text-input-overlay {
+        position: absolute; z-index: 120; background: rgba(20,22,25,0.9); border: 1px dashed var(--accent);
+        outline: none; resize: none; padding: 2px 4px; font-size: 15px; line-height: 1.2; min-width: 60px; min-height: 22px; color: #fff;
+    }
+
+    .toast {
+        position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(20px);
+        background: var(--panel-bg-2); border: 1px solid var(--border-color); color: var(--text-main);
+        padding: 10px 16px; border-radius: 8px; font-size: 0.82rem; opacity: 0; pointer-events: none;
+        transition: opacity 0.25s, transform 0.25s; z-index: 500; box-shadow: 0 6px 24px rgba(0,0,0,0.5);
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    @media (max-width: 640px) {
+        .graph-area { height: 260px; }
+        .chart-container { padding: 14px; }
+        .price-display { font-size: 1.6rem; }
+        .stats-bar { grid-template-columns: repeat(2, 1fr); }
+    }
+</style>
+</head>
+<body>
+<div class="chart-container" id="chart-container">
+    <div class="header">
+        <div class="left-head">
+            <div class="sym-row">
+                <select id="symbol-select" title="Choose the trading pair">
+                    <option value="btcusdt" selected>BTC / USDT</option>
+                    <option value="ethusdt">ETH / USDT</option>
+                    <option value="solusdt">SOL / USDT</option>
+                    <option value="bnbusdt">BNB / USDT</option>
+                    <option value="xrpusdt">XRP / USDT</option>
+                    <option value="dogeusdt">DOGE / USDT</option>
+                    <option value="adausdt">ADA / USDT</option>
+                </select>
+                <span class="pair-sub">Live Interval</span>
+            </div>
+            <div id="live-price" class="price-display">Loading…<span id="price-change-inline" class="price-change-inline"></span></div>
+            <div class="target-box">Price to Beat: <span id="strike-price">---</span><span id="strike-dist" class="dist"></span></div>
+        </div>
+        <div class="right-head">
+            <div class="status-badge">
+                <span id="status-dot" class="dot"></span>
+                <span id="status-text">Connecting…</span>
+            </div>
+            <div class="countdown-wrap">
+                <svg class="countdown-ring" width="34" height="34" viewBox="0 0 34 34">
+                    <circle class="bg" cx="17" cy="17" r="14" fill="none" stroke-width="3"></circle>
+                    <circle id="ring-fg" class="fg" cx="17" cy="17" r="14" fill="none" stroke-width="3"
+                            stroke-dasharray="87.96" stroke-dashoffset="0"></circle>
+                </svg>
+                <div id="time-left">--:--</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="stats-bar" id="stats-bar">
+        <div class="stat-cell"><div class="lbl">24h High</div><div class="val" id="stat-high">--</div></div>
+        <div class="stat-cell"><div class="lbl">24h Low</div><div class="val" id="stat-low">--</div></div>
+        <div class="stat-cell"><div class="lbl">24h Change</div><div class="val" id="stat-change">--</div></div>
+        <div class="stat-cell"><div class="lbl">24h Volume</div><div class="val" id="stat-vol">--</div></div>
+        <div class="stat-cell"><div class="lbl">Window Range</div><div class="val" id="stat-range">--</div></div>
+    </div>
+
+    <div class="toolbar">
+        <button class="tool-btn active" data-mode="none" id="btn-cursor" title="Select / move / delete lines">↖ Cursor</button>
+        <button class="tool-btn buy" data-mode="addBuy" id="btn-buy" title="Mark a buy level">＋ Buy</button>
+        <button class="tool-btn sell" data-mode="addSell" id="btn-sell" title="Mark a sell level">＋ Sell</button>
+        <button class="tool-btn" data-mode="trendline" id="btn-trend" title="Draw a trend line">╱ Trend</button>
+        <button class="tool-btn pencil" data-mode="pencil" id="btn-pencil" title="Freehand pencil">✎ Pencil</button>
+        <button class="tool-btn eraser" data-mode="eraser" id="btn-eraser" title="Erase pencil / text">🧹 Eraser</button>
+        <button class="tool-btn text-tool" data-mode="text" id="btn-text" title="Add text">Aa Text</button>
+        <button class="tool-btn" id="btn-undo" title="Undo (Ctrl+Z)">↺ Undo</button>
+        <button class="tool-btn" id="btn-redo" title="Redo (Ctrl+Shift+Z)">↻ Redo</button>
+        <select id="duration-select" title="Window length before the chart resets">
+            <option value="180">3 min</option>
+            <option value="300" selected>5 min</option>
+            <option value="420">7 min</option>
+            <option value="600">10 min</option>
+            <option value="900">15 min</option>
+            <option value="1200">20 min</option>
+            <option value="1800">30 min</option>
+        </select>
+        <button class="tool-btn clear" id="btn-clear" title="Remove every drawing">Clear All</button>
+    </div>
+
+    <div class="toolbar sub" id="pencil-options">
+        <span class="swatch-group" id="swatch-group">
+            <span style="font-size:0.75rem;color:var(--text-muted);margin-right:2px;">Color</span>
+            <input type="color" id="draw-color" value="#ffcc00">
+        </span>
+        <span class="width-group" id="width-group">
+            <span style="font-size:0.75rem;color:var(--text-muted);margin-right:2px;">Weight</span>
+            <button class="width-btn" data-width="1.5" title="Thin"><span style="width:12px;height:1.5px;"></span></button>
+            <button class="width-btn active" data-width="3" title="Medium"><span style="width:12px;height:3px;"></span></button>
+            <button class="width-btn" data-width="6" title="Thick"><span style="width:12px;height:6px;"></span></button>
+        </span>
+    </div>
+
+    <div class="hint-text" id="hint-text"></div>
+
+    <div class="graph-area" id="graph-area">
+        <canvas id="liveChart"></canvas>
+        <button class="scroll-latest" id="scroll-latest" title="Jump to latest price">Latest ▸</button>
+    </div>
+    <canvas id="annotationCanvas"></canvas>
+
+    <div class="footer">
+        <div>Feed: <strong id="feed-label">Binance WS</strong></div>
+        <div>Condition: <strong id="trend-indicator" style="transition: color 0.2s;">—</strong></div>
+        <div>Progress: <strong id="progress-text">0 / 300s</strong></div>
+    </div>
+
+    <div class="drawings-panel">
+        <h3><span>Marked Levels</span><span id="levels-count" style="color:var(--text-dim);"></span></h3>
+        <div id="drawings-list"><div class="empty-hint">No levels marked yet — add a buy or sell line above.</div></div>
+    </div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+(function () {
+    const chartContainer = document.getElementById('chart-container');
+    const graphArea = document.getElementById('graph-area');
+    const canvas = document.getElementById('liveChart');
+    const ctx = canvas.getContext('2d');
+    const annoCanvas = document.getElementById('annotationCanvas');
+    const actx = annoCanvas.getContext('2d');
+
+    const priceElement = document.getElementById('live-price');
+    const priceChangeInline = document.getElementById('price-change-inline');
+    const strikeElement = document.getElementById('strike-price');
+    const strikeDist = document.getElementById('strike-dist');
+    const timeLeftElement = document.getElementById('time-left');
+    const ringFg = document.getElementById('ring-fg');
+    const statusDot = document.getElementById('status-dot');
+    const statusText = document.getElementById('status-text');
+    const trendIndicator = document.getElementById('trend-indicator');
+    const progressText = document.getElementById('progress-text');
+    const drawingsListEl = document.getElementById('drawings-list');
+    const levelsCount = document.getElementById('levels-count');
+    const hintText = document.getElementById('hint-text');
+    const pencilOptions = document.getElementById('pencil-options');
+    const widthGroup = document.getElementById('width-group');
+    const colorInput = document.getElementById('draw-color');
+    const durationSelect = document.getElementById('duration-select');
+    const symbolSelect = document.getElementById('symbol-select');
+    const btnUndo = document.getElementById('btn-undo');
+    const btnRedo = document.getElementById('btn-redo');
+    const scrollLatestBtn = document.getElementById('scroll-latest');
+    const toastEl = document.getElementById('toast');
+    const statHigh = document.getElementById('stat-high');
+    const statLow = document.getElementById('stat-low');
+    const statChange = document.getElementById('stat-change');
+    const statVol = document.getElementById('stat-vol');
+    const statRange = document.getElementById('stat-range');
+
+    const RING_CIRC = 87.96; // 2π × 14
+
+    // ---- Layout constants ----
+    const PAD_LEFT = 12, PAD_RIGHT = 66, PAD_TOP = 16, PAD_BOTTOM = 26;
+    const pixelsPerSecond = 6;
+    const HIT_THRESHOLD = 8;      // px for grabbing an hline
+    const ERASE_THRESHOLD = 14;   // px for eraser
+    const LS_KEY = 'cryptoTracker.v6';
+
+    // ---- Symbol metadata (decimals for clean formatting) ----
+    const SYMBOLS = {
+        btcusdt: { label: 'BTC / USDT', dp: 2 },
+        ethusdt: { label: 'ETH / USDT', dp: 2 },
+        solusdt: { label: 'SOL / USDT', dp: 2 },
+        bnbusdt: { label: 'BNB / USDT', dp: 2 },
+        xrpusdt: { label: 'XRP / USDT', dp: 4 },
+        dogeusdt:{ label: 'DOGE / USDT', dp: 5 },
+        adausdt: { label: 'ADA / USDT', dp: 4 },
+    };
+
+    // ---- Mutable state ----
+    let symbol = 'btcusdt';
+    let priceDecimals = 2;
+    let maxInterval = parseInt(durationSelect.value, 10) || 300;
+    let intervalSeconds = 0;
+    let lastPrice = null;
+    let prevPrice = null;
+    let strikePrice = null;
+    let priceData = [];            // [{ t, price }]
+    let stats24 = { high: null, low: null, changePct: null, vol: null };
+
+    let chartElements = [];        // hlines + trendlines
+    let annotations = [];          // freehand strokes + text
+    let currentStroke = null;
+    let mode = 'none';
+    let drawColor = colorInput.value || '#ffcc00';
+    let drawWidth = 3;
+
+    let scaleParams = null;
+    let hoverHlineId = null;
+    let userScrolledAway = false;
+    let pendingTrend = null;       // first click of a trend line
+    let ws = null;
+    let reconnectTimer = null;
+    let clockTimer = null;
+    let listDirty = true;          // throttle drawings-list re-render
+
+    // ---- History (undo/redo) ----
+    let history = [];
+    let historyIndex = -1;
+
+    // ---- ID helper (avoids Date.now/Math.random reliance for keys) ----
+    let _idSeq = 1;
+    function nextId() { return 'el' + (_idSeq++); }
+
+    // ==================================================================
+    // Utilities
+    // ==================================================================
+    function fmtPrice(v) {
+        if (v == null || isNaN(v)) return '---';
+        return v.toLocaleString(undefined, { minimumFractionDigits: priceDecimals, maximumFractionDigits: priceDecimals });
+    }
+    function fmtTime(sec) {
+        sec = Math.max(0, Math.floor(sec));
+        const m = Math.floor(sec / 60);
+        const s = sec % 60;
+        return `${m}:${s.toString().padStart(2, '0')}`;
+    }
+    function fmtVol(v) {
+        if (v == null || isNaN(v)) return '--';
+        if (v >= 1e9) return (v / 1e9).toFixed(2) + 'B';
+        if (v >= 1e6) return (v / 1e6).toFixed(2) + 'M';
+        if (v >= 1e3) return (v / 1e3).toFixed(2) + 'K';
+        return v.toFixed(2);
+    }
+    function distToSegment(px, py, x1, y1, x2, y2) {
+        const dx = x2 - x1, dy = y2 - y1;
+        const lenSq = dx * dx + dy * dy;
+        let t = lenSq ? ((px - x1) * dx + (py - y1) * dy) / lenSq : 0;
+        t = Math.max(0, Math.min(1, t));
+        const cx = x1 + t * dx, cy = y1 + t * dy;
+        return Math.hypot(px - cx, py - cy);
+    }
+
+    let toastTimer = null;
+    function toast(msg) {
+        toastEl.textContent = msg;
+        toastEl.classList.add('show');
+        if (toastTimer) clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2200);
+    }
+
+    // ==================================================================
+    // Persistence (localStorage, keyed per symbol)
+    // ==================================================================
+    function saveState() {
+        try {
+            const all = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
+            all[symbol] = { chartElements, annotations };
+            localStorage.setItem(LS_KEY, JSON.stringify(all));
+        } catch (e) { /* storage may be unavailable */ }
+    }
+    function loadState() {
+        try {
+            const all = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
+            const s = all[symbol];
+            if (s) {
+                chartElements = Array.isArray(s.chartElements) ? s.chartElements : [];
+                annotations = Array.isArray(s.annotations) ? s.annotations : [];
+            } else {
+                chartElements = [];
+                annotations = [];
+            }
+        } catch (e) {
+            chartElements = [];
+            annotations = [];
+        }
+    }
+
+    // ==================================================================
+    // Undo / redo
+    // ==================================================================
+    function snapshot() {
+        return JSON.stringify({ chartElements, annotations });
+    }
+    function pushHistory() {
+        // drop any redo tail
+        history = history.slice(0, historyIndex + 1);
+        history.push(snapshot());
+        if (history.length > 60) history.shift();
+        historyIndex = history.length - 1;
+        updateUndoRedoButtons();
+        saveState();
+    }
+    function restoreSnapshot(str) {
+        try {
+            const data = JSON.parse(str);
+            chartElements = data.chartElements || [];
+            annotations = data.annotations || [];
+        } catch (e) { /* ignore */ }
+    }
+    function undo() {
+        if (historyIndex <= 0) return;
+        historyIndex--;
+        restoreSnapshot(history[historyIndex]);
+        listDirty = true;
+        drawChart();
+        renderAnnotations();
+        renderDrawingsList();
+        updateUndoRedoButtons();
+        saveState();
+    }
+    function redo() {
+        if (historyIndex >= history.length - 1) return;
+        historyIndex++;
+        restoreSnapshot(history[historyIndex]);
+        listDirty = true;
+        drawChart();
+        renderAnnotations();
+        renderDrawingsList();
+        updateUndoRedoButtons();
+        saveState();
+    }
+    function updateUndoRedoButtons() {
+        btnUndo.disabled = historyIndex <= 0;
+        btnRedo.disabled = historyIndex >= history.length - 1;
+    }
+
+    // ==================================================================
+    // Canvas sizing
+    // ==================================================================
+    function computeContentWidth() {
+        return Math.round(PAD_LEFT + PAD_RIGHT + pixelsPerSecond * maxInterval);
+    }
+
+    function resizeCanvas(rescale) {
+        const h = graphArea.clientHeight;
+        const contentW = Math.max(computeContentWidth(), graphArea.clientWidth);
+        canvas.width = contentW;
+        canvas.height = h;
+        canvas.style.width = contentW + 'px';
+        canvas.style.height = h + 'px';
+        drawChart();
+        if (!userScrolledAway) {
+            graphArea.scrollLeft = graphArea.scrollWidth;
+        }
+        updateScrollLatestBtn();
+    }
+
+    function syncAnnotationCanvas() {
+        const w = chartContainer.clientWidth ? graphArea.clientWidth : graphArea.clientWidth;
+        annoCanvas.width = graphArea.clientWidth;
+        annoCanvas.height = graphArea.clientHeight;
+        annoCanvas.style.width = graphArea.clientWidth + 'px';
+        annoCanvas.style.height = graphArea.clientHeight + 'px';
+        // position the overlay exactly over the graph area
+        annoCanvas.style.top = graphArea.offsetTop + 'px';
+        annoCanvas.style.left = graphArea.offsetLeft + 'px';
+        renderAnnotations();
+    }
+
+    // ==================================================================
+    // Chart rendering
+    // ==================================================================
+    function computePriceBounds() {
+        let vals = priceData.map(p => p.price);
+        if (lastPrice != null) vals.push(lastPrice);
+        if (strikePrice != null) vals.push(strikePrice);
+        // include marked hlines so their tags stay on-screen
+        chartElements.forEach(el => { if (el.type === 'hline') vals.push(el.price); });
+        vals = vals.filter(v => v != null && !isNaN(v));
+        if (!vals.length) return { min: 0, max: 1 };
+        let min = Math.min(...vals), max = Math.max(...vals);
+        if (min === max) { min *= 0.999; max *= 1.001; }
+        else { min *= 0.9998; max *= 1.0002; }
+        return { min, max };
+    }
+
+    function drawChart() {
+        const w = canvas.width, h = canvas.height;
+        ctx.clearRect(0, 0, w, h);
+
+        const { min, max } = computePriceBounds();
+        const plotLeft = PAD_LEFT;
+        const plotRight = w - PAD_RIGHT;
+        const plotTop = PAD_TOP;
+        const plotBottom = h - PAD_BOTTOM;
+        const plotW = plotRight - plotLeft;
+        const plotH = plotBottom - plotTop;
+        const range = max - min || 1;
+
+        const getX = (t) => plotLeft + (t / maxInterval) * plotW;
+        const getY = (val) => plotBottom - ((val - min) / range) * plotH;
+        const priceFromY = (y) => min + ((plotBottom - y) / plotH) * range;
+        const timeFromX = (x) => ((x - plotLeft) / plotW) * maxInterval;
+
+        scaleParams = { min, max, plotLeft, plotRight, plotTop, plotBottom, plotW, plotH, getX, getY, priceFromY, timeFromX };
+
+        // ---- horizontal grid + price labels ----
+        ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+        ctx.fillStyle = '#5a626e';
+        ctx.font = '10px -apple-system, sans-serif';
+        ctx.lineWidth = 1;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        for (let i = 0; i <= 5; i++) {
+            const val = min + (range * i / 5);
+            const y = getY(val);
+            ctx.beginPath();
+            ctx.moveTo(plotLeft, y);
+            ctx.lineTo(plotRight, y);
+            ctx.stroke();
+            ctx.fillText(fmtPrice(val), plotRight + 4, y);
+        }
+
+        // ---- vertical grid every 60s + time labels ----
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        for (let s = 0; s <= maxInterval; s += 60) {
+            const x = getX(s);
+            ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+            ctx.beginPath();
+            ctx.moveTo(x, plotTop);
+            ctx.lineTo(x, plotBottom);
+            ctx.stroke();
+            ctx.fillStyle = '#5a626e';
+            ctx.fillText(fmtTime(s), x, plotBottom + 6);
+        }
+
+        // ---- progress shade (elapsed portion of the window) ----
+        if (intervalSeconds > 0) {
+            const px = getX(Math.min(intervalSeconds, maxInterval));
+            ctx.fillStyle = 'rgba(255,255,255,0.02)';
+            ctx.fillRect(plotLeft, plotTop, px - plotLeft, plotH);
+        }
+
+        // ---- strike (price to beat) dashed line ----
+        if (strikePrice != null) {
+            const y = getY(strikePrice);
+            ctx.save();
+            ctx.strokeStyle = 'rgba(255,204,0,0.7)';
+            ctx.setLineDash([5, 4]);
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(plotLeft, y);
+            ctx.lineTo(plotRight, y);
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        // ---- marked hlines with right-edge tags ----
+        chartElements.forEach(el => {
+            if (el.type !== 'hline') return;
+            const y = getY(el.price);
+            const isBuy = el.side === 'buy';
+            const col = isBuy ? '#00ff88' : '#ff3355';
+            const hit = el.hit;
+            ctx.save();
+            ctx.strokeStyle = col;
+            ctx.globalAlpha = (hoverHlineId === el.id) ? 1 : 0.85;
+            ctx.lineWidth = (hoverHlineId === el.id) ? 2 : 1.4;
+            ctx.setLineDash(hit ? [] : [2, 3]);
+            ctx.beginPath();
+            ctx.moveTo(plotLeft, y);
+            ctx.lineTo(plotRight, y);
+            ctx.stroke();
+            ctx.restore();
+
+            // tag on the right gutter
+            const label = fmtPrice(el.price);
+            const tagX = plotRight + 2;
+            ctx.save();
+            ctx.font = 'bold 10px -apple-system, sans-serif';
+            ctx.fillStyle = col;
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'middle';
+            ctx.fillText((isBuy ? 'B ' : 'S ') + label, tagX, y);
+            ctx.restore();
+
+            // delete badge when hovered
+            if (hoverHlineId === el.id) {
+                ctx.save();
+                ctx.fillStyle = '#ff3355';
+                ctx.beginPath();
+                ctx.arc(plotLeft + 10, y, 7, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 10px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('×', plotLeft + 10, y);
+                ctx.restore();
+            }
+        });
+
+        // ---- trend lines ----
+        chartElements.forEach(el => {
+            if (el.type !== 'trendline') return;
+            const x1 = getX(el.t1), y1 = getY(el.p1);
+            const x2 = getX(el.t2), y2 = getY(el.p2);
+            ctx.save();
+            ctx.strokeStyle = el.color || '#ffffff';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.stroke();
+            ctx.restore();
+        });
+
+        // ---- pending trend preview ----
+        if (pendingTrend) {
+            ctx.save();
+            ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+            ctx.setLineDash([4, 3]);
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.arc(getX(pendingTrend.t1), getY(pendingTrend.p1), 3, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        // ---- price line ----
+        if (priceData.length > 0) {
+            const above = strikePrice == null ? true : (lastPrice >= strikePrice);
+            ctx.strokeStyle = above ? '#00ff88' : '#ff3355';
+            ctx.lineWidth = 2;
+            ctx.lineJoin = 'round';
+            ctx.beginPath();
+            priceData.forEach((pt, i) => {
+                const x = getX(pt.t), y = getY(pt.price);
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            });
+            ctx.stroke();
+
+            // gradient fill under the line
+            const last = priceData[priceData.length - 1];
+            const grad = ctx.createLinearGradient(0, plotTop, 0, plotBottom);
+            grad.addColorStop(0, above ? 'rgba(0,255,136,0.18)' : 'rgba(255,51,85,0.18)');
+            grad.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            priceData.forEach((pt, i) => {
+                const x = getX(pt.t), y = getY(pt.price);
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            });
+            ctx.lineTo(getX(last.t), plotBottom);
+            ctx.lineTo(getX(priceData[0].t), plotBottom);
+            ctx.closePath();
+            ctx.fill();
+
+            // head dot
+            ctx.fillStyle = above ? '#00ff88' : '#ff3355';
+            ctx.beginPath();
+            ctx.arc(getX(last.t), getY(last.price), 3.5, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+
+    // ==================================================================
+    // Annotation layer (freehand + text), stored as canvas fractions
+    // ==================================================================
+    function renderAnnotations() {
+        const w = annoCanvas.width, h = annoCanvas.height;
+        actx.clearRect(0, 0, w, h);
+        annotations.forEach(a => {
+            if (a.type === 'stroke') {
+                if (!a.points || a.points.length < 1) return;
+                actx.strokeStyle = a.color || '#ffcc00';
+                actx.lineWidth = a.width || 3;
+                actx.lineJoin = 'round';
+                actx.lineCap = 'round';
+                actx.beginPath();
+                a.points.forEach((p, i) => {
+                    const x = p.xFrac * w, y = p.yFrac * h;
+                    if (i === 0) actx.moveTo(x, y);
+                    else actx.lineTo(x, y);
+                });
+                if (a.points.length === 1) {
+                    const p = a.points[0];
+                    actx.arc(p.xFrac * w, p.yFrac * h, (a.width || 3) / 2, 0, Math.PI * 2);
+                    actx.fillStyle = a.color || '#ffcc00';
+                    actx.fill();
+                } else {
+                    actx.stroke();
+                }
+            } else if (a.type === 'text') {
+                actx.fillStyle = a.color || '#ffffff';
+                actx.font = (a.size || 15) + 'px -apple-system, sans-serif';
+                actx.textAlign = 'left';
+                actx.textBaseline = 'top';
+                const x = a.xFrac * w, y = a.yFrac * h;
+                (a.text || '').split('\n').forEach((line, i) => {
+                    actx.fillText(line, x, y + i * (a.size || 15) * 1.2);
+                });
+            }
+        });
+    }
+
+    // ==================================================================
+    // Marked-levels side panel
+    // ==================================================================
+    function renderDrawingsList() {
+        const hlines = chartElements.filter(el => el.type === 'hline');
+        const trends = chartElements.filter(el => el.type === 'trendline');
+        levelsCount.textContent = chartElements.length ? `${chartElements.length} total` : '';
+
+        if (chartElements.length === 0) {
+            drawingsListEl.innerHTML = '<div class="empty-hint">No levels marked yet — add a buy or sell line above.</div>';
+            return;
+        }
+
+        let html = '';
+        hlines.forEach(el => {
+            const col = el.side === 'buy' ? 'var(--up-color)' : 'var(--down-color)';
+            let pct = '';
+            if (lastPrice != null) {
+                const diff = ((lastPrice - el.price) / el.price) * 100;
+                const sign = diff >= 0 ? '+' : '';
+                const pcol = diff >= 0 ? 'var(--up-color)' : 'var(--down-color)';
+                pct = `<span class="pct" style="color:${pcol}">${sign}${diff.toFixed(2)}%</span>`;
+            }
+            const hitBadge = el.hit ? '<span class="hit yes">HIT</span>' : '';
+            html += `<div class="drawing-item" data-id="${el.id}">
+                <div class="left">
+                    <span class="swatch" style="background:${col}"></span>
+                    <span>${el.side === 'buy' ? 'Buy' : 'Sell'} @ ${fmtPrice(el.price)}</span>
+                    ${pct}${hitBadge}
+                </div>
+                <button class="del-btn" data-del="${el.id}" title="Delete">×</button>
+            </div>`;
+        });
+        trends.forEach(el => {
+            html += `<div class="drawing-item" data-id="${el.id}">
+                <div class="left">
+                    <span class="swatch" style="background:${el.color || '#fff'}"></span>
+                    <span>Trend line</span>
+                </div>
+                <button class="del-btn" data-del="${el.id}" title="Delete">×</button>
+            </div>`;
+        });
+        drawingsListEl.innerHTML = html;
+
+        drawingsListEl.querySelectorAll('[data-del]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const id = btn.getAttribute('data-del');
+                chartElements = chartElements.filter(e => e.id !== id);
+                pushHistory();
+                listDirty = true;
+                drawChart();
+                renderDrawingsList();
+                toast('Level removed');
+            });
+        });
+    }
+
+    // ==================================================================
+    // Chart-canvas interaction (cursor / buy / sell / trend)
+    // ==================================================================
+    function getCanvasPos(e) {
+        const rect = canvas.getBoundingClientRect();
+        const src = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0]) || e;
+        return { x: src.clientX - rect.left, y: src.clientY - rect.top };
+    }
+
+    function findNearbyHline(y) {
+        if (!scaleParams) return null;
+        let best = null, bestD = HIT_THRESHOLD;
+        chartElements.forEach(el => {
+            if (el.type !== 'hline') return;
+            const ey = scaleParams.getY(el.price);
+            const d = Math.abs(ey - y);
+            if (d < bestD) { bestD = d; best = el; }
+        });
+        return best;
+    }
+
+    let draggingHline = null;
+
+    function chartPointerDown(pos) {
+        if (!scaleParams) return;
+        const price = scaleParams.priceFromY(pos.y);
+        const t = Math.max(0, Math.min(maxInterval, scaleParams.timeFromX(pos.x)));
+
+        if (mode === 'addBuy' || mode === 'addSell') {
+            const el = { id: nextId(), type: 'hline', side: mode === 'addBuy' ? 'buy' : 'sell', price, hit: false };
+            chartElements.push(el);
+            pushHistory();
+            listDirty = true;
+            drawChart();
+            renderDrawingsList();
+            toast((el.side === 'buy' ? 'Buy' : 'Sell') + ' level @ ' + fmtPrice(price));
+            return;
+        }
+
+        if (mode === 'trendline') {
+            if (!pendingTrend) {
+                pendingTrend = { t1: t, p1: price };
+                drawChart();
+                toast('Trend: tap the end point');
+            } else {
+                const el = { id: nextId(), type: 'trendline', t1: pendingTrend.t1, p1: pendingTrend.p1, t2: t, p2: price, color: '#ffffff' };
+                chartElements.push(el);
+                pendingTrend = null;
+                pushHistory();
+                listDirty = true;
+                drawChart();
+                renderDrawingsList();
+                toast('Trend line added');
+            }
+            return;
+        }
+
+        if (mode === 'none') {
+            // delete badge hit-test
+            const hovered = findNearbyHline(pos.y);
+            if (hovered) {
+                const badgeX = scaleParams.plotLeft + 10;
+                const badgeY = scaleParams.getY(hovered.price);
+                if (Math.hypot(pos.x - badgeX, pos.y - badgeY) < 9) {
+                    chartElements = chartElements.filter(e => e.id !== hovered.id);
+                    pushHistory();
+                    listDirty = true;
+                    drawChart();
+                    renderDrawingsList();
+                    toast('Level removed');
+                    return;
+                }
+                draggingHline = hovered;
+            }
+        }
+    }
+
+    function chartPointerMove(pos) {
+        if (!scaleParams) return;
+        if (draggingHline) {
+            draggingHline.price = scaleParams.priceFromY(pos.y);
+            draggingHline.hit = false;
+            listDirty = true;
+            drawChart();
+            return;
+        }
+        // hover highlight in cursor mode
+        if (mode === 'none') {
+            const hovered = findNearbyHline(pos.y);
+            const id = hovered ? hovered.id : null;
+            if (id !== hoverHlineId) {
+                hoverHlineId = id;
+                canvas.style.cursor = hovered ? 'pointer' : 'crosshair';
+                drawChart();
+            }
+        }
+    }
+
+    function chartPointerUp() {
+        if (draggingHline) {
+            pushHistory();
+            renderDrawingsList();
+            draggingHline = null;
+        }
+    }
+
+    canvas.addEventListener('mousedown', e => chartPointerDown(getCanvasPos(e)));
+    canvas.addEventListener('mousemove', e => chartPointerMove(getCanvasPos(e)));
+    window.addEventListener('mouseup', chartPointerUp);
+    canvas.addEventListener('touchstart', e => { e.preventDefault(); chartPointerDown(getCanvasPos(e)); }, { passive: false });
+    canvas.addEventListener('touchmove', e => { e.preventDefault(); chartPointerMove(getCanvasPos(e)); }, { passive: false });
+    canvas.addEventListener('touchend', e => { chartPointerUp(); });
+    canvas.addEventListener('mouseleave', () => { if (hoverHlineId) { hoverHlineId = null; drawChart(); } });
+
+    // ==================================================================
+    // Annotation-canvas interaction (pencil / eraser / text)
+    // ==================================================================
+    function annoPos(e) {
+        const rect = annoCanvas.getBoundingClientRect();
+        const src = (e.touches && e.touches[0]) || (e.changedTouches && e.changedTouches[0]) || e;
+        return { x: src.clientX - rect.left, y: src.clientY - rect.top, clientX: src.clientX, clientY: src.clientY };
+    }
+
+    function isInteractiveTarget(el) {
+        return el && el.closest && el.closest('button, select, input, textarea, .drawing-item');
+    }
+
+    function eraseNear(x, y) {
+        const w = annoCanvas.width, h = annoCanvas.height;
+        let removed = false;
+        annotations = annotations.filter(a => {
+            if (a.type === 'stroke') {
+                for (let i = 0; i < a.points.length; i++) {
+                    const px = a.points[i].xFrac * w, py = a.points[i].yFrac * h;
+                    if (Math.hypot(px - x, py - y) < ERASE_THRESHOLD) { removed = true; return false; }
+                }
+                return true;
+            } else if (a.type === 'text') {
+                const px = a.xFrac * w, py = a.yFrac * h;
+                if (x >= px - 6 && x <= px + 120 && y >= py - 4 && y <= py + (a.size || 15) * 1.4) {
+                    removed = true; return false;
+                }
+                return true;
+            }
+            return true;
+        });
+        return removed;
+    }
+
+    let annoDrawing = false;
+
+    function annoDown(e) {
+        if (isInteractiveTarget(e.target)) return;
+        const p = annoPos(e);
+        const w = annoCanvas.width, h = annoCanvas.height;
+
+        if (mode === 'pencil') {
+            annoDrawing = true;
+            currentStroke = { type: 'stroke', color: drawColor, width: drawWidth, points: [{ xFrac: p.x / w, yFrac: p.y / h }] };
+            annotations.push(currentStroke);
+            renderAnnotations();
+        } else if (mode === 'eraser') {
+            annoDrawing = true;
+            if (eraseNear(p.x, p.y)) { renderAnnotations(); }
+        } else if (mode === 'text') {
+            startTextInput(p.clientX, p.clientY, p.x / w, p.y / h);
+        }
+    }
+
+    function annoMove(e) {
+        if (!annoDrawing) return;
+        const p = annoPos(e);
+        const w = annoCanvas.width, h = annoCanvas.height;
+        if (mode === 'pencil' && currentStroke) {
+            currentStroke.points.push({ xFrac: p.x / w, yFrac: p.y / h });
+            renderAnnotations();
+        } else if (mode === 'eraser') {
+            if (eraseNear(p.x, p.y)) renderAnnotations();
+        }
+    }
+
+    function annoUp() {
+        if (!annoDrawing) return;
+        annoDrawing = false;
+        if (mode === 'pencil' && currentStroke && currentStroke.points.length) {
+            currentStroke = null;
+            pushHistory();
+        } else if (mode === 'eraser') {
+            pushHistory();
+        }
+    }
+
+    annoCanvas.addEventListener('mousedown', annoDown);
+    annoCanvas.addEventListener('mousemove', annoMove);
+    window.addEventListener('mouseup', annoUp);
+    annoCanvas.addEventListener('touchstart', e => { if (mode !== 'none') e.preventDefault(); annoDown(e); }, { passive: false });
+    annoCanvas.addEventListener('touchmove', e => { if (annoDrawing) e.preventDefault(); annoMove(e); }, { passive: false });
+    annoCanvas.addEventListener('touchend', annoUp);
+
+    function startTextInput(clientX, clientY, xFrac, yFrac) {
+        const ta = document.createElement('textarea');
+        ta.className = 'text-input-overlay';
+        ta.style.left = clientX + 'px';
+        ta.style.top = clientY + 'px';
+        ta.style.color = drawColor;
+        document.body.appendChild(ta);
+        setTimeout(() => ta.focus(), 0);
+
+        function commit() {
+            const val = ta.value.trim();
+            if (val) {
+                annotations.push({ type: 'text', text: val, color: drawColor, size: 15, xFrac, yFrac });
+                pushHistory();
+                renderAnnotations();
+            }
+            if (ta.parentNode) ta.parentNode.removeChild(ta);
+        }
+        ta.addEventListener('keydown', ev => {
+            if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); commit(); }
+            else if (ev.key === 'Escape') { if (ta.parentNode) ta.parentNode.removeChild(ta); }
+        });
+        ta.addEventListener('blur', commit);
+    }
+
+    // ==================================================================
+    // Mode / toolbar wiring
+    // ==================================================================
+    const HINTS = {
+        none: 'Cursor: hover a level to highlight it, drag to move, click its × to delete.',
+        addBuy: 'Buy tool: click on the chart to place a green buy level.',
+        addSell: 'Sell tool: click on the chart to place a red sell level.',
+        trendline: 'Trend tool: click a start point, then an end point.',
+        pencil: 'Pencil: draw freehand. Pick a color and weight below.',
+        eraser: 'Eraser: click or drag over pencil strokes / text to remove them.',
+        text: 'Text: click where you want to type, press Enter to place it.',
+    };
+
+    function setMode(newMode) {
+        mode = newMode;
+        pendingTrend = null;
+        document.querySelectorAll('.tool-btn[data-mode]').forEach(b => {
+            b.classList.toggle('active', b.getAttribute('data-mode') === newMode);
+        });
+        hintText.textContent = HINTS[newMode] || '';
+
+        // pencil options visible for pencil + text (color)
+        const showOpts = (newMode === 'pencil' || newMode === 'text');
+        pencilOptions.classList.toggle('visible', showOpts);
+        widthGroup.style.display = (newMode === 'pencil') ? 'flex' : 'none';
+
+        // annotation overlay only intercepts events for drawing modes
+        const annoActive = (newMode === 'pencil' || newMode === 'eraser' || newMode === 'text');
+        annoCanvas.style.pointerEvents = annoActive ? 'auto' : 'none';
+        annoCanvas.classList.remove('mode-none', 'mode-eraser', 'mode-text');
+        if (newMode === 'eraser') annoCanvas.classList.add('mode-eraser');
+        else if (newMode === 'text') annoCanvas.classList.add('mode-text');
+
+        canvas.style.cursor = (newMode === 'none') ? 'crosshair' : 'crosshair';
+        drawChart();
+    }
+
+    document.querySelectorAll('.tool-btn[data-mode]').forEach(btn => {
+        btn.addEventListener('click', () => setMode(btn.getAttribute('data-mode')));
+    });
+
+    btnUndo.addEventListener('click', undo);
+    btnRedo.addEventListener('click', redo);
+
+    document.getElementById('btn-clear').addEventListener('click', () => {
+        if (!chartElements.length && !annotations.length) return;
+        chartElements = [];
+        annotations = [];
+        pendingTrend = null;
+        pushHistory();
+        listDirty = true;
+        drawChart();
+        renderAnnotations();
+        renderDrawingsList();
+        toast('Cleared all drawings');
+    });
+
+    colorInput.addEventListener('input', () => { drawColor = colorInput.value; });
+
+    widthGroup.querySelectorAll('.width-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            widthGroup.querySelectorAll('.width-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            drawWidth = parseFloat(btn.getAttribute('data-width'));
+        });
+    });
+
+    durationSelect.addEventListener('change', () => {
+        maxInterval = parseInt(durationSelect.value, 10) || 300;
+        // drop any priceData / trend points beyond the new window
+        priceData = priceData.filter(p => p.t <= maxInterval);
+        userScrolledAway = false;
+        resizeCanvas(false);
+        updateClockUI();
+        renderDrawingsList();
+        toast('Window set to ' + fmtTime(maxInterval).replace(':00', ' min'));
+    });
+
+    symbolSelect.addEventListener('change', () => {
+        saveState();               // persist current symbol's drawings
+        symbol = symbolSelect.value;
+        priceDecimals = (SYMBOLS[symbol] && SYMBOLS[symbol].dp) || 2;
+        loadState();               // load new symbol's drawings
+        // fresh window for the new pair
+        intervalSeconds = 0;
+        priceData = [];
+        lastPrice = null;
+        prevPrice = null;
+        strikePrice = null;
+        stats24 = { high: null, low: null, changePct: null, vol: null };
+        history = [];
+        historyIndex = -1;
+        pushHistory();
+        listDirty = true;
+        priceElement.textContent = 'Loading…';
+        priceElement.appendChild(priceChangeInline);
+        priceChangeInline.textContent = '';
+        strikeElement.textContent = '---';
+        strikeDist.textContent = '';
+        updateStatsUI();
+        updateClockUI();
+        drawChart();
+        renderAnnotations();
+        renderDrawingsList();
+        connectMarketFeed();
+        toast('Switched to ' + (SYMBOLS[symbol] ? SYMBOLS[symbol].label : symbol.toUpperCase()));
+    });
+
+    // ==================================================================
+    // Scroll-latest button
+    // ==================================================================
+    function updateScrollLatestBtn() {
+        const maxScroll = graphArea.scrollWidth - graphArea.clientWidth;
+        const away = maxScroll > 4 && (graphArea.scrollLeft < maxScroll - 6);
+        scrollLatestBtn.classList.toggle('show', away);
+    }
+    graphArea.addEventListener('scroll', () => {
+        const maxScroll = graphArea.scrollWidth - graphArea.clientWidth;
+        userScrolledAway = graphArea.scrollLeft < maxScroll - 6;
+        updateScrollLatestBtn();
+    });
+    scrollLatestBtn.addEventListener('click', () => {
+        userScrolledAway = false;
+        graphArea.scrollLeft = graphArea.scrollWidth;
+        updateScrollLatestBtn();
+    });
+
+    // ==================================================================
+    // UI updaters
+    // ==================================================================
+    function updateStrikeUI() {
+        strikeElement.textContent = strikePrice != null ? fmtPrice(strikePrice) : '---';
+        if (strikePrice != null && lastPrice != null) {
+            const diff = lastPrice - strikePrice;
+            const pct = (diff / strikePrice) * 100;
+            const up = diff >= 0;
+            strikeDist.textContent = `${up ? '+' : ''}${fmtPrice(Math.abs(diff)).replace('-', '')} (${up ? '+' : ''}${pct.toFixed(2)}%)`;
+            strikeDist.style.color = up ? 'var(--up-color)' : 'var(--down-color)';
+        } else {
+            strikeDist.textContent = '';
+        }
+    }
+
+    function updateStatsUI() {
+        statHigh.textContent = stats24.high != null ? fmtPrice(stats24.high) : '--';
+        statLow.textContent = stats24.low != null ? fmtPrice(stats24.low) : '--';
+        if (stats24.changePct != null) {
+            const up = stats24.changePct >= 0;
+            statChange.textContent = `${up ? '+' : ''}${stats24.changePct.toFixed(2)}%`;
+            statChange.style.color = up ? 'var(--up-color)' : 'var(--down-color)';
+        } else {
+            statChange.textContent = '--';
+            statChange.style.color = '';
+        }
+        statVol.textContent = stats24.vol != null ? fmtVol(stats24.vol) : '--';
+        if (priceData.length) {
+            const ps = priceData.map(p => p.price);
+            const lo = Math.min(...ps), hi = Math.max(...ps);
+            statRange.textContent = fmtPrice(hi - lo);
+        } else {
+            statRange.textContent = '--';
+        }
+    }
+
+    function updateClockUI() {
+        const remaining = Math.max(0, maxInterval - intervalSeconds);
+        timeLeftElement.textContent = fmtTime(remaining);
+        progressText.textContent = `${Math.min(intervalSeconds, maxInterval)} / ${maxInterval}s`;
+        const frac = maxInterval > 0 ? (remaining / maxInterval) : 0;
+        ringFg.setAttribute('stroke-dashoffset', (RING_CIRC * (1 - frac)).toFixed(2));
+    }
+
+    function checkLevelHits() {
+        if (lastPrice == null || prevPrice == null) return;
+        chartElements.forEach(el => {
+            if (el.type !== 'hline' || el.hit) return;
+            const crossedUp = prevPrice < el.price && lastPrice >= el.price;
+            const crossedDown = prevPrice > el.price && lastPrice <= el.price;
+            if (crossedUp || crossedDown) {
+                el.hit = true;
+                listDirty = true;
+                toast(`${el.side === 'buy' ? 'Buy' : 'Sell'} level ${fmtPrice(el.price)} hit!`);
+            }
+        });
+    }
+
+    // ==================================================================
+    // Interval clock
+    // ==================================================================
+    function resetWindow() {
+        intervalSeconds = 0;
+        priceData = [];
+        strikePrice = lastPrice;
+        // trend lines are time-anchored to the old window — drop them
+        chartElements = chartElements.filter(el => el.type !== 'trendline');
+        // reset hit flags for a new round
+        chartElements.forEach(el => { if (el.type === 'hline') el.hit = false; });
+        pendingTrend = null;
+        userScrolledAway = false;
+        listDirty = true;
+        updateStrikeUI();
+        resizeCanvas(false);
+        updateClockUI();
+        renderDrawingsList();
+        saveState();
+    }
+
+    function tick() {
+        intervalSeconds++;
+        if (lastPrice != null) {
+            priceData.push({ t: Math.min(intervalSeconds, maxInterval), price: lastPrice });
+        }
+        if (intervalSeconds >= maxInterval) {
+            toast('Window elapsed — new round');
+            resetWindow();
+            return;
+        }
+        updateClockUI();
+        if (listDirty) { renderDrawingsList(); listDirty = false; }
+        updateStatsUI();
+        drawChart();
+    }
+
+    function startClock() {
+        if (clockTimer) clearInterval(clockTimer);
+        clockTimer = setInterval(tick, 1000);
+    }
+
+    // ==================================================================
+    // Market feed (Binance public ticker WS)
+    // ==================================================================
+    function setStatus(state, text) {
+        statusDot.classList.remove('connected', 'error');
+        if (state === 'connected') statusDot.classList.add('connected');
+        else if (state === 'error') statusDot.classList.add('error');
+        statusText.textContent = text;
+    }
+
+    function connectMarketFeed() {
+        if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+        if (ws) { try { ws.onclose = null; ws.close(); } catch (e) {} ws = null; }
+
+        setStatus('', 'Connecting…');
+        const url = `wss://stream.binance.com:9443/ws/${symbol}@ticker`;
+        let sock;
+        try { sock = new WebSocket(url); }
+        catch (e) { setStatus('error', 'Connection failed'); scheduleReconnect(); return; }
+        ws = sock;
+
+        sock.onopen = () => setStatus('connected', 'Live');
+
+        sock.onmessage = (evt) => {
+            let d;
+            try { d = JSON.parse(evt.data); } catch (e) { return; }
+            const price = parseFloat(d.c);
+            if (isNaN(price)) return;
+
+            prevPrice = lastPrice;
+            lastPrice = price;
+            if (strikePrice == null) { strikePrice = price; updateStrikeUI(); }
+
+            // 24h stats straight from the ticker payload
+            stats24.high = parseFloat(d.h);
+            stats24.low = parseFloat(d.l);
+            stats24.changePct = parseFloat(d.P);
+            stats24.vol = parseFloat(d.q); // quote volume (USDT)
+
+            // price display + direction color
+            priceElement.classList.remove('up', 'down');
+            if (prevPrice != null) {
+                if (price > prevPrice) priceElement.classList.add('up');
+                else if (price < prevPrice) priceElement.classList.add('down');
+            }
+            // update only the leading text node, keep the inline-change span
+            if (priceElement.firstChild && priceElement.firstChild.nodeType === 3) {
+                priceElement.firstChild.nodeValue = fmtPrice(price);
+            } else {
+                priceElement.insertBefore(document.createTextNode(fmtPrice(price)), priceElement.firstChild || null);
+            }
+
+            // inline 24h change next to price
+            if (!isNaN(stats24.changePct)) {
+                const up = stats24.changePct >= 0;
+                priceChangeInline.textContent = `${up ? '▲' : '▼'} ${Math.abs(stats24.changePct).toFixed(2)}%`;
+                priceChangeInline.style.color = up ? 'var(--up-color)' : 'var(--down-color)';
+            }
+
+            // condition vs strike
+            if (strikePrice != null) {
+                const above = price >= strikePrice;
+                trendIndicator.textContent = above ? 'ABOVE TARGET' : 'BELOW TARGET';
+                trendIndicator.style.color = above ? 'var(--up-color)' : 'var(--down-color)';
+            }
+
+            updateStrikeUI();
+            checkLevelHits();
+            updateStatsUI();
+            drawChart();
+        };
+
+        sock.onerror = () => setStatus('error', 'Feed error');
+        sock.onclose = () => { setStatus('error', 'Reconnecting…'); scheduleReconnect(); };
+    }
+
+    function scheduleReconnect() {
+        if (reconnectTimer) return;
+        reconnectTimer = setTimeout(() => { reconnectTimer = null; connectMarketFeed(); }, 3000);
+    }
+
+    // ==================================================================
+    // Keyboard shortcuts
+    // ==================================================================
+    document.addEventListener('keydown', (e) => {
+        const tag = (e.target && e.target.tagName) || '';
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+            e.preventDefault();
+            if (e.shiftKey) redo(); else undo();
+            return;
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
+        const map = { '1': 'none', '2': 'addBuy', '3': 'addSell', '4': 'trendline', '5': 'pencil', '6': 'eraser', '7': 'text' };
+        if (map[e.key]) { setMode(map[e.key]); }
+    });
+
+    // ==================================================================
+    // Resize handling
+    // ==================================================================
+    let resizeRaf = null;
+    window.addEventListener('resize', () => {
+        if (resizeRaf) cancelAnimationFrame(resizeRaf);
+        resizeRaf = requestAnimationFrame(() => {
+            resizeCanvas(false);
+            syncAnnotationCanvas();
+        });
+    });
+
+    // ==================================================================
+    // Init
+    // ==================================================================
+    function init() {
+        symbol = symbolSelect.value || 'btcusdt';
+        priceDecimals = (SYMBOLS[symbol] && SYMBOLS[symbol].dp) || 2;
+        loadState();
+        history = [];
+        historyIndex = -1;
+        pushHistory();               // baseline snapshot
+        setMode('none');
+        resizeCanvas(false);
+        syncAnnotationCanvas();
+        updateClockUI();
+        updateStatsUI();
+        renderDrawingsList();
+        connectMarketFeed();
+        startClock();
+    }
+
+    init();
+})();
+</script>
+</body>
+</html>
